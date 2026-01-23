@@ -459,22 +459,10 @@ export default function App() {
                               {item.name}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <div className="text-xs font-mono font-bold text-slate-400">
-                                {Math.floor(item.plannedSeconds / 60)}m
-                              </div>
+                          <div className="text-right">
+                            <div className="text-xs font-mono font-bold text-slate-400">
+                              {Math.floor(item.plannedSeconds / 60)}m
                             </div>
-                            <button
-                              onClick={() => requestDeletePatient(item.id)}
-                              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all ${
-                                confirmDeleteId === item.id
-                                  ? 'bg-rose-500 text-white shadow-sm'
-                                  : 'bg-slate-100 text-slate-400 hover:text-rose-500'
-                              }`}
-                            >
-                              {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
-                            </button>
                           </div>
                         </div>
                       );
@@ -512,22 +500,10 @@ export default function App() {
                               {item.name}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <div className="text-xs font-mono font-bold text-slate-400">
-                                {Math.floor(item.plannedSeconds / 60)}m
-                              </div>
+                          <div className="text-right">
+                            <div className="text-xs font-mono font-bold text-slate-400">
+                              {Math.floor(item.plannedSeconds / 60)}m
                             </div>
-                            <button
-                              onClick={() => requestDeletePatient(item.id)}
-                              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all ${
-                                confirmDeleteId === item.id
-                                  ? 'bg-rose-500 text-white shadow-sm'
-                                  : 'bg-slate-100 text-slate-400 hover:text-rose-500'
-                              }`}
-                            >
-                              {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
-                            </button>
                           </div>
                         </div>
                       );
