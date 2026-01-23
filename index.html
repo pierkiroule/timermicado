@@ -1,1 +1,509 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { 
+  Settings, 
+  Plus, 
+  Play, 
+  Pause, 
+  SkipForward, 
+  Trash2, 
+  Download, 
+  ClipboardList, 
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  BarChart3,
+  X,
+  History
+} from 'lucide-react';
 
+// Configuration Firebase
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'timer-micado-pro';
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [showConfig, setShowConfig] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [meetingState, setMeetingState] = useState({
+    duration: 60,
+    breakTime: 5,
+    cases: [],
+    activeIndex: -1,
+    isRunning: false,
+    totalSecondsLeft: 3600,
+    currentCaseSecondsLeft: 0,
+    history: []
+  });
+
+  const [bulkInput, setBulkInput] = useState("");
+  const timerRef = useRef(null);
+
+  // --- AUTH & FIRESTORE SYNC ---
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInAnonymously(auth); // Fallback to anonymous for this preview
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetingState');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setMeetingState(prev => ({ ...prev, ...data }));
+      }
+    }, (err) => console.error("Firestore error:", err));
+    return () => unsubscribe();
+  }, [user]);
+
+  const saveToCloud = async (newState) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'meetingState'), newState);
+    } catch (err) {
+      console.error("Save error:", err);
+    }
+  };
+
+  // --- LOGIC ---
+  const calculateDurations = (config) => {
+    const totalPoints = config.cases.reduce((acc, c) => acc + (c.priority || 3), 0);
+    const availableSeconds = (config.duration - config.breakTime) * 60;
+    
+    return config.cases.map(c => ({
+      ...c,
+      plannedSeconds: totalPoints > 0 ? Math.floor(((c.priority || 3) / totalPoints) * availableSeconds) : 0
+    }));
+  };
+
+  const updateConfig = (updates) => {
+    const nextState = { ...meetingState, ...updates };
+    nextState.cases = calculateDurations(nextState);
+    if (nextState.activeIndex === -1) {
+      nextState.totalSecondsLeft = nextState.duration * 60;
+    }
+    setMeetingState(nextState);
+    saveToCloud(nextState);
+  };
+
+  const handleBulkImport = () => {
+    const names = bulkInput.split('\n').map(n => n.trim()).filter(n => n !== "");
+    const newCases = names.map(name => ({
+      id: crypto.randomUUID(),
+      name,
+      priority: 3,
+      plannedSeconds: 0,
+      actualSecondsSpent: 0,
+      completed: false
+    }));
+    updateConfig({ cases: [...meetingState.cases, ...newCases] });
+    setBulkInput("");
+  };
+
+  const toggleTimer = () => {
+    const isRunning = !meetingState.isRunning;
+    if (isRunning && meetingState.activeIndex === -1 && meetingState.cases.length > 0) {
+      handleNextCase(0);
+    } else {
+      updateConfig({ isRunning });
+    }
+  };
+
+  const handleNextCase = (forcedIndex) => {
+    const currentIndex = meetingState.activeIndex;
+    const nextIndex = typeof forcedIndex === 'number' ? forcedIndex : currentIndex + 1;
+    
+    let updatedCases = [...meetingState.cases];
+    
+    if (currentIndex >= 0 && currentIndex < updatedCases.length) {
+      updatedCases[currentIndex].completed = true;
+      // Record final remaining time as feedback
+      updatedCases[currentIndex].remainingAtCompletion = meetingState.currentCaseSecondsLeft;
+    }
+
+    if (nextIndex < updatedCases.length) {
+      updateConfig({
+        activeIndex: nextIndex,
+        isRunning: true,
+        currentCaseSecondsLeft: updatedCases[nextIndex].plannedSeconds,
+        cases: updatedCases
+      });
+    } else {
+      updateConfig({ isRunning: false, activeIndex: 999 }); 
+    }
+  };
+
+  useEffect(() => {
+    if (meetingState.isRunning && meetingState.activeIndex >= 0 && meetingState.activeIndex < 999) {
+      timerRef.current = setInterval(() => {
+        setMeetingState(prev => {
+          const newState = {
+            ...prev,
+            totalSecondsLeft: Math.max(-3600, prev.totalSecondsLeft - 1),
+            currentCaseSecondsLeft: prev.currentCaseSecondsLeft - 1
+          };
+          return newState;
+        });
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [meetingState.isRunning, meetingState.activeIndex]);
+
+  const resetMeeting = () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 3000);
+      return;
+    }
+    const resetState = {
+      duration: 60,
+      breakTime: 5,
+      cases: [],
+      activeIndex: -1,
+      isRunning: false,
+      totalSecondsLeft: 3600,
+      currentCaseSecondsLeft: 0,
+      history: []
+    };
+    setMeetingState(resetState);
+    saveToCloud(resetState);
+    setConfirmReset(false);
+    setShowConfig(false);
+  };
+
+  // Export Excel using dynamic script loading to avoid build errors
+  const exportToExcel = () => {
+    const script = document.createElement('script');
+    script.src = "https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js";
+    script.onload = () => {
+      const data = meetingState.cases.map(c => ({
+        "Patient": c.name,
+        "Priorité": c.priority,
+        "Temps Prévu (min)": Math.round(c.plannedSeconds / 60),
+        "Statut": c.completed ? "Traité" : "En attente",
+        "Écart (sec)": c.remainingAtCompletion || 0
+      }));
+
+      const ws = window.XLSX.utils.json_to_sheet(data);
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, "Synthese Staff");
+      window.XLSX.writeFile(wb, `Staff_MICADO_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+    document.head.appendChild(script);
+  };
+
+  const formatTime = (s) => {
+    const isNeg = s < 0;
+    const absS = Math.abs(s);
+    const m = Math.floor(absS / 60);
+    const sec = absS % 60;
+    return `${isNeg ? '-' : ''}${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
+      <div className="max-w-4xl mx-auto">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          <div className="flex items-center gap-4">
+            <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-indigo-100 shadow-xl">
+              <Clock size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-slate-800">TIMER MICADO</h1>
+              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Pédopsychiatrie • Session Clinique</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] font-black text-slate-300 uppercase tracking-wider mb-1">Total Restant</div>
+            <div className={`text-3xl font-mono font-bold ${meetingState.totalSecondsLeft < 300 ? 'text-rose-500' : 'text-slate-700'}`}>
+              {formatTime(meetingState.totalSecondsLeft)}
+            </div>
+          </div>
+        </div>
+
+        {/* Main Display */}
+        <div className="grid grid-cols-1 gap-6">
+          <div className="bg-white rounded-[2.5rem] p-12 border border-slate-100 shadow-sm text-center relative overflow-hidden">
+            {meetingState.activeIndex === 999 ? (
+              <div className="py-10 animate-in fade-in duration-700">
+                <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <CheckCircle2 size={40} className="text-green-500" />
+                </div>
+                <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tight">Staff Complété !</h2>
+                <p className="text-slate-500 mb-10 max-w-md mx-auto text-lg">Toutes les situations cliniques ont été discutées. Vous pouvez maintenant exporter le compte-rendu.</p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button onClick={exportToExcel} className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+                      <Download size={20} /> Exporter le Board Excel
+                    </button>
+                    <button onClick={() => setShowConfig(true)} className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-600 px-8 py-4 rounded-2xl font-bold hover:bg-slate-200 transition-all">
+                      <Settings size={20} /> Nouvelle Session
+                    </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="absolute top-8 left-8 flex items-center gap-2">
+                   <div className={`w-2.5 h-2.5 rounded-full ${meetingState.isRunning ? 'bg-green-500 animate-pulse' : 'bg-slate-200'}`}></div>
+                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
+                     {meetingState.isRunning ? 'Live Monitoring' : 'Session en Pause'}
+                   </span>
+                </div>
+
+                <div className="mb-6">
+                   <div className="h-10 flex items-center justify-center">
+                        <p className={`font-bold italic text-lg transition-colors duration-300 ${meetingState.currentCaseSecondsLeft < 0 ? 'text-rose-500' : 'text-indigo-500'}`}>
+                            {meetingState.currentCaseSecondsLeft < 0 ? "⚠️ Temps dépassé ! Concluons..." : 
+                             meetingState.currentCaseSecondsLeft < 60 && meetingState.activeIndex >= 0 ? "⏳ Dernière minute !" : 
+                             meetingState.activeIndex === -1 ? "Prêt pour le staff ?" : "Discussion en cours"}
+                        </p>
+                   </div>
+                   <h2 className="text-6xl font-black text-slate-800 tracking-tight mt-4">
+                     {meetingState.activeIndex >= 0 ? meetingState.cases[meetingState.activeIndex]?.name : "En attente"}
+                   </h2>
+                </div>
+
+                <div className={`text-[9rem] font-mono font-black my-4 tracking-tighter leading-none transition-colors ${meetingState.currentCaseSecondsLeft < 0 ? 'text-rose-500' : 'text-slate-800'}`}>
+                  {formatTime(meetingState.currentCaseSecondsLeft)}
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-4 mt-12">
+                  <button 
+                    onClick={toggleTimer}
+                    className={`flex items-center gap-3 px-12 py-5 rounded-[1.5rem] font-black text-xl transition-all shadow-xl ${meetingState.isRunning ? 'bg-amber-500 text-white shadow-amber-50/50 hover:bg-amber-600' : 'bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700'}`}
+                  >
+                    {meetingState.isRunning ? <><Pause size={28} /> PAUSE</> : <><Play size={28} /> {meetingState.activeIndex === -1 ? 'DÉMARRER' : 'REPRENDRE'}</>}
+                  </button>
+                  
+                  {meetingState.activeIndex >= 0 && (
+                    <button 
+                      onClick={() => handleNextCase()}
+                      className="flex items-center gap-3 bg-white text-slate-700 px-10 py-5 rounded-[1.5rem] font-black text-xl hover:bg-slate-50 transition-all border-2 border-slate-100 shadow-sm"
+                    >
+                      SUIVANT <SkipForward size={28} />
+                    </button>
+                  )}
+                  
+                  <button 
+                    onClick={() => setShowConfig(true)}
+                    className="p-5 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:text-slate-600 hover:bg-slate-100 transition-all border border-slate-100"
+                  >
+                    <Settings size={28} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Stats and History */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+              <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <ClipboardList size={16} className="text-indigo-400" /> Ordre du Jour
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-300">{meetingState.cases.length} PATIENTS</span>
+              </div>
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+                {meetingState.cases.length === 0 && (
+                    <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                        <p className="text-slate-400 text-sm font-medium">Aucun cas configuré</p>
+                    </div>
+                )}
+                {meetingState.cases.map((c, i) => (
+                  <div key={c.id} className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${meetingState.activeIndex === i ? 'bg-indigo-50/50 border-indigo-100' : 'bg-white border-slate-50'}`}>
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${c.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                        {c.completed ? <CheckCircle2 size={18} /> : `P${c.priority}`}
+                      </div>
+                      <span className={`font-bold text-lg ${c.completed ? 'text-slate-300 line-through' : 'text-slate-700'}`}>{c.name}</span>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-xs font-mono font-bold text-slate-400">{Math.floor(c.plannedSeconds / 60)}m</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <BarChart3 size={16} className="text-indigo-400" /> Analyse en Direct
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-[#f8f9ff] p-5 rounded-2xl border border-indigo-50">
+                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / Cas</div>
+                  <div className="text-3xl font-black text-slate-800">
+                    {meetingState.cases.length ? Math.round((meetingState.duration - meetingState.breakTime) / meetingState.cases.length) : 0} 
+                    <span className="text-sm font-bold text-slate-400 ml-1">min</span>
+                  </div>
+                </div>
+                <div className="bg-[#fff9f9] p-5 rounded-2xl border border-rose-50">
+                  <div className="text-[10px] font-black text-rose-300 uppercase mb-1">Pause Prévue</div>
+                  <div className="text-3xl font-black text-slate-800">{meetingState.breakTime} <span className="text-sm font-bold text-slate-400 ml-1">min</span></div>
+                </div>
+                <div className="bg-[#f8fff9] p-5 rounded-2xl border border-green-50 col-span-2">
+                  <div className="flex justify-between items-end mb-2">
+                      <div className="text-[10px] font-black text-green-400 uppercase">Progression Staff</div>
+                      <div className="text-sm font-black text-green-600">
+                        {meetingState.cases.length > 0 ? Math.round((meetingState.cases.filter(c => c.completed).length / meetingState.cases.length) * 100) : 0}%
+                      </div>
+                  </div>
+                  <div className="w-full h-3 bg-white rounded-full overflow-hidden border border-green-50">
+                      <div 
+                        className="h-full bg-green-500 transition-all duration-500" 
+                        style={{ width: `${meetingState.cases.length > 0 ? (meetingState.cases.filter(c => c.completed).length / meetingState.cases.length) * 100 : 0}%` }}
+                      ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* --- MODALE DE CONFIGURATION --- */}
+        {showConfig && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                  <Settings className="text-indigo-600" size={28} /> CONFIGURATION
+                </h2>
+                <button onClick={() => setShowConfig(false)} className="bg-white text-slate-400 hover:text-rose-500 p-3 rounded-xl transition-all shadow-sm border border-slate-100">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                {/* Durations */}
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">DURÉE STAFF (min)</label>
+                    <input 
+                      type="number" 
+                      value={meetingState.duration} 
+                      onChange={(e) => updateConfig({ duration: parseInt(e.target.value) || 0 })}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none font-bold text-xl transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">TEMPS PAUSE (min)</label>
+                    <input 
+                      type="number" 
+                      value={meetingState.breakTime} 
+                      onChange={(e) => updateConfig({ breakTime: parseInt(e.target.value) || 0 })}
+                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none font-bold text-xl transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Bulk Import */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex justify-between">
+                    <span>IMPORT PATIENTS (1 PAR LIGNE)</span>
+                    <span className="text-indigo-500">RAPIDE</span>
+                  </label>
+                  <textarea 
+                    value={bulkInput}
+                    onChange={(e) => setBulkInput(e.target.value)}
+                    placeholder="Nicolas&#10;Inès&#10;Thomas..."
+                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none h-40 font-medium text-lg transition-all"
+                  />
+                  <button 
+                    onClick={handleBulkImport}
+                    className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:bg-slate-700 transition-all shadow-lg"
+                  >
+                    <Plus size={20} /> AJOUTER À LA LISTE
+                  </button>
+                </div>
+
+                {/* Patient List Management */}
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">CAS À TRAITER & PRIORITÉS</label>
+                  <div className="space-y-3">
+                    {meetingState.cases.map((c, i) => (
+                      <div key={c.id} className="flex items-center gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100 transition-all hover:bg-white hover:shadow-md group">
+                        <div className="flex-1">
+                          <div className="flex justify-between mb-3">
+                              <span className="font-black text-slate-800 text-lg uppercase tracking-tight">{c.name}</span>
+                              <span className="font-mono font-bold text-indigo-600">{Math.floor(c.plannedSeconds / 60)} min</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-black text-slate-400 w-20">URGENCE P{c.priority}</span>
+                            <input 
+                              type="range" min="1" max="5" 
+                              value={c.priority} 
+                              onChange={(e) => {
+                                const newCases = [...meetingState.cases];
+                                newCases[i].priority = parseInt(e.target.value);
+                                updateConfig({ cases: newCases });
+                              }}
+                              className="flex-1 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-indigo-600" 
+                            />
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const newCases = meetingState.cases.filter((_, idx) => idx !== i);
+                            updateConfig({ cases: newCases });
+                          }}
+                          className="text-slate-200 hover:text-rose-500 p-3 transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={22} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="pt-10 border-t border-slate-100">
+                  <button 
+                    onClick={resetMeeting}
+                    className={`w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 ${confirmReset ? 'bg-rose-600 text-white shadow-rose-100' : 'bg-rose-50 text-rose-600 hover:bg-rose-100 shadow-sm'}`}
+                  >
+                    <AlertCircle size={22} />
+                    {confirmReset ? "CLIQUEZ POUR CONFIRMER L'EFFACEMENT" : "RÉINITIALISER LA SESSION"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-8 bg-white border-t border-slate-50 flex gap-4">
+                <button 
+                  onClick={() => setShowConfig(false)}
+                  className="flex-1 bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
+                >
+                  DÉMARRER LE STAFF
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+      `}</style>
+    </div>
+  );
+}
