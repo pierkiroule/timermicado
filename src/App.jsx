@@ -6,7 +6,6 @@ import {
   ClipboardList,
   Clock,
   Download,
-  Pause,
   Play,
   Plus,
   Settings,
@@ -18,10 +17,36 @@ import {
 const COMPLETED_INDEX = 999;
 const STORAGE_KEY = 'timermicado-state-v1';
 
+const defaultCases = [
+  { name: 'Louis', type: 'pedo1' },
+  { name: 'Iza', type: 'pedo1' },
+  { name: 'Lou', type: 'pedo1' },
+  { name: 'Zoé', type: 'pedo1' },
+  { name: 'Noa', type: 'pedo1' },
+  { name: 'Malo', type: 'pedo1' },
+  { name: 'Jade', type: 'pedo1' },
+  { name: 'Eli', type: 'pedo1' },
+  { name: 'Tao', type: 'pedo2' },
+  { name: 'Mia', type: 'pedo2' },
+  { name: 'Léa', type: 'pedo2' },
+  { name: 'Sami', type: 'pedo2' },
+  { name: 'Noé', type: 'pedo2' },
+  { name: 'Lina', type: 'pedo2' },
+  { name: 'Éden', type: 'pedo2' }
+].map((item) => ({
+  id: crypto.randomUUID(),
+  name: item.name,
+  type: item.type,
+  priority: 3,
+  plannedSeconds: 0,
+  completed: false,
+  remainingAtCompletion: null
+}));
+
 const defaultState = {
   duration: 60,
   breakTime: 5,
-  cases: [],
+  cases: defaultCases,
   activeIndex: -1,
   isRunning: false,
   totalSecondsLeft: 60 * 60,
@@ -44,15 +69,25 @@ const calculateDurations = (config) => {
 const loadState = () => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState;
+    if (!raw) {
+      return {
+        ...defaultState,
+        cases: calculateDurations(defaultState)
+      };
+    }
     const parsed = JSON.parse(raw);
-    return {
+    const merged = {
       ...defaultState,
       ...parsed
     };
+    merged.cases = calculateDurations(merged);
+    return merged;
   } catch (error) {
     console.warn('Impossible de charger le dernier état.', error);
-    return defaultState;
+    return {
+      ...defaultState,
+      cases: calculateDurations(defaultState)
+    };
   }
 };
 
@@ -69,11 +104,22 @@ export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [bulkInput, setBulkInput] = useState('');
+  const [currentTime, setCurrentTime] = useState(() =>
+    new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  );
   const timerRef = useRef(null);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(meetingState));
   }, [meetingState]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (meetingState.isRunning && meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX) {
@@ -116,6 +162,7 @@ export default function App() {
     const newCases = names.map((name) => ({
       id: crypto.randomUUID(),
       name,
+      type: 'pedo1',
       priority: 3,
       plannedSeconds: 0,
       completed: false,
@@ -208,6 +255,13 @@ export default function App() {
     return Math.round((completed / meetingState.cases.length) * 100);
   }, [meetingState.cases]);
 
+  const groupedCases = useMemo(() => {
+    return {
+      pedo1: meetingState.cases.filter((item) => item.type !== 'pedo2'),
+      pedo2: meetingState.cases.filter((item) => item.type === 'pedo2')
+    };
+  }, [meetingState.cases]);
+
   return (
     <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-5xl mx-auto">
@@ -232,6 +286,8 @@ export default function App() {
             >
               {formatTime(meetingState.totalSecondsLeft)}
             </div>
+            <div className="text-[10px] font-black text-slate-300 uppercase tracking-wider mt-3">Heure actuelle</div>
+            <div className="text-xl font-mono font-bold text-slate-500">{currentTime}</div>
           </div>
         </div>
 
@@ -307,24 +363,14 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-wrap justify-center gap-4 mt-12">
-                  <button
-                    onClick={toggleTimer}
-                    className={`flex items-center gap-3 px-10 md:px-12 py-5 rounded-[1.5rem] font-black text-lg md:text-xl transition-all shadow-xl ${
-                      meetingState.isRunning
-                        ? 'bg-amber-500 text-white shadow-amber-50/50 hover:bg-amber-600'
-                        : 'bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700'
-                    }`}
-                  >
-                    {meetingState.isRunning ? (
-                      <>
-                        <Pause size={28} /> Pause
-                      </>
-                    ) : (
-                      <>
-                        <Play size={28} /> {meetingState.activeIndex === -1 ? 'Démarrer' : 'Reprendre'}
-                      </>
-                    )}
-                  </button>
+                  {!meetingState.isRunning && (
+                    <button
+                      onClick={toggleTimer}
+                      className="flex items-center gap-3 px-10 md:px-12 py-5 rounded-[1.5rem] font-black text-lg md:text-xl transition-all shadow-xl bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700"
+                    >
+                      <Play size={28} /> {meetingState.activeIndex === -1 ? 'Démarrer' : 'Reprendre'}
+                    </button>
+                  )}
 
                   {meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX && (
                     <button
@@ -360,38 +406,92 @@ export default function App() {
                     <p className="text-slate-400 text-sm font-medium">Aucun cas configuré</p>
                   </div>
                 )}
-                {meetingState.cases.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
-                      meetingState.activeIndex === index
-                        ? 'bg-indigo-50/50 border-indigo-100'
-                        : 'bg-white border-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
-                          item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
-                      </div>
-                      <span
-                        className={`font-bold text-lg ${
-                          item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
-                        }`}
-                      >
-                        {item.name}
+                {meetingState.cases.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-sky-500"></span>PEDO 1
                       </span>
+                      <span>{groupedCases.pedo1.length}</span>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs font-mono font-bold text-slate-400">
-                        {Math.floor(item.plannedSeconds / 60)}m
-                      </div>
+                    {groupedCases.pedo1.map((item) => {
+                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                            meetingState.activeIndex === index
+                              ? 'bg-sky-50/60 border-sky-100'
+                              : 'bg-white border-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
+                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
+                            </div>
+                            <span
+                              className={`font-bold text-lg ${
+                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
+                              }`}
+                            >
+                              {item.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-mono font-bold text-slate-400">
+                              {Math.floor(item.plannedSeconds / 60)}m
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 pt-3">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>PEDO 2
+                      </span>
+                      <span>{groupedCases.pedo2.length}</span>
                     </div>
-                  </div>
-                ))}
+                    {groupedCases.pedo2.map((item) => {
+                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                            meetingState.activeIndex === index
+                              ? 'bg-emerald-50/60 border-emerald-100'
+                              : 'bg-white border-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
+                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
+                            </div>
+                            <span
+                              className={`font-bold text-lg ${
+                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
+                              }`}
+                            >
+                              {item.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-mono font-bold text-slate-400">
+                              {Math.floor(item.plannedSeconds / 60)}m
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </div>
 
