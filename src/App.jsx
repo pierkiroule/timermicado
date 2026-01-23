@@ -6,25 +6,49 @@ import {
   ClipboardList,
   Clock,
   Download,
-  Pause,
   Play,
   Plus,
   Settings,
   SkipForward,
-  Trash2,
   X
 } from 'lucide-react';
 
 const COMPLETED_INDEX = 999;
 const STORAGE_KEY = 'timermicado-state-v1';
 
+const defaultCases = [
+  { name: 'Louis', type: 'pedo1' },
+  { name: 'Iza', type: 'pedo1' },
+  { name: 'Lou', type: 'pedo1' },
+  { name: 'Zoé', type: 'pedo1' },
+  { name: 'Noa', type: 'pedo1' },
+  { name: 'Malo', type: 'pedo1' },
+  { name: 'Jade', type: 'pedo1' },
+  { name: 'Eli', type: 'pedo1' },
+  { name: 'Tao', type: 'pedo2' },
+  { name: 'Mia', type: 'pedo2' },
+  { name: 'Léa', type: 'pedo2' },
+  { name: 'Sami', type: 'pedo2' },
+  { name: 'Noé', type: 'pedo2' },
+  { name: 'Lina', type: 'pedo2' },
+  { name: 'Éden', type: 'pedo2' }
+].map((item) => ({
+  id: crypto.randomUUID(),
+  name: item.name,
+  type: item.type,
+  priority: 3,
+  plannedSeconds: 0,
+  completed: false,
+  remainingAtCompletion: null
+}));
+
 const defaultState = {
-  duration: 60,
-  breakTime: 5,
-  cases: [],
+  duration: 180,
+  breakTime: 10,
+  cases: defaultCases,
   activeIndex: -1,
   isRunning: false,
-  totalSecondsLeft: 60 * 60,
+  totalSecondsLeft: 180 * 60,
   currentCaseSecondsLeft: 0
 };
 
@@ -44,15 +68,25 @@ const calculateDurations = (config) => {
 const loadState = () => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState;
+    if (!raw) {
+      return {
+        ...defaultState,
+        cases: calculateDurations(defaultState)
+      };
+    }
     const parsed = JSON.parse(raw);
-    return {
+    const merged = {
       ...defaultState,
       ...parsed
     };
+    merged.cases = calculateDurations(merged);
+    return merged;
   } catch (error) {
     console.warn('Impossible de charger le dernier état.', error);
-    return defaultState;
+    return {
+      ...defaultState,
+      cases: calculateDurations(defaultState)
+    };
   }
 };
 
@@ -68,12 +102,24 @@ export default function App() {
   const [meetingState, setMeetingState] = useState(loadState);
   const [showConfig, setShowConfig] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [bulkInput, setBulkInput] = useState('');
+  const [currentTime, setCurrentTime] = useState(() =>
+    new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+  );
   const timerRef = useRef(null);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(meetingState));
   }, [meetingState]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (meetingState.isRunning && meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX) {
@@ -116,6 +162,7 @@ export default function App() {
     const newCases = names.map((name) => ({
       id: crypto.randomUUID(),
       name,
+      type: 'pedo1',
       priority: 3,
       plannedSeconds: 0,
       completed: false,
@@ -182,6 +229,19 @@ export default function App() {
     setConfirmReset(false);
   };
 
+  const requestDeletePatient = (id) => {
+    if (confirmDeleteId === id) {
+      const newCases = meetingState.cases.filter((item) => item.id !== id);
+      updateConfig({ cases: newCases });
+      setConfirmDeleteId(null);
+      return;
+    }
+    setConfirmDeleteId(id);
+    window.setTimeout(() => {
+      setConfirmDeleteId((current) => (current === id ? null : current));
+    }, 3000);
+  };
+
   const exportToExcel = async () => {
     const script = document.createElement('script');
     script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
@@ -208,6 +268,13 @@ export default function App() {
     return Math.round((completed / meetingState.cases.length) * 100);
   }, [meetingState.cases]);
 
+  const groupedCases = useMemo(() => {
+    return {
+      pedo1: meetingState.cases.filter((item) => item.type !== 'pedo2'),
+      pedo2: meetingState.cases.filter((item) => item.type === 'pedo2')
+    };
+  }, [meetingState.cases]);
+
   return (
     <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-5xl mx-auto">
@@ -232,6 +299,8 @@ export default function App() {
             >
               {formatTime(meetingState.totalSecondsLeft)}
             </div>
+            <div className="text-[10px] font-black text-slate-300 uppercase tracking-wider mt-3">Heure actuelle</div>
+            <div className="text-xl font-mono font-bold text-slate-500">{currentTime}</div>
           </div>
         </div>
 
@@ -244,8 +313,7 @@ export default function App() {
                 </div>
                 <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tight">Staff complété !</h2>
                 <p className="text-slate-500 mb-10 max-w-md mx-auto text-lg">
-                  Toutes les situations cliniques ont été discutées. Exportez le compte-rendu pour votre
-                  synthèse.
+                  Toutes les situations cliniques ont été discutées. Exportez le compte-rendu pour votre synthèse.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <button
@@ -307,24 +375,14 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-wrap justify-center gap-4 mt-12">
-                  <button
-                    onClick={toggleTimer}
-                    className={`flex items-center gap-3 px-10 md:px-12 py-5 rounded-[1.5rem] font-black text-lg md:text-xl transition-all shadow-xl ${
-                      meetingState.isRunning
-                        ? 'bg-amber-500 text-white shadow-amber-50/50 hover:bg-amber-600'
-                        : 'bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700'
-                    }`}
-                  >
-                    {meetingState.isRunning ? (
-                      <>
-                        <Pause size={28} /> Pause
-                      </>
-                    ) : (
-                      <>
-                        <Play size={28} /> {meetingState.activeIndex === -1 ? 'Démarrer' : 'Reprendre'}
-                      </>
-                    )}
-                  </button>
+                  {!meetingState.isRunning && (
+                    <button
+                      onClick={toggleTimer}
+                      className="flex items-center gap-3 px-10 md:px-12 py-5 rounded-[1.5rem] font-black text-lg md:text-xl transition-all shadow-xl bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700"
+                    >
+                      <Play size={28} /> {meetingState.activeIndex === -1 ? 'Démarrer' : 'Reprendre'}
+                    </button>
+                  )}
 
                   {meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX && (
                     <button
@@ -357,41 +415,119 @@ export default function App() {
               <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                 {meetingState.cases.length === 0 && (
                   <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <p className="text-slate-400 text-sm font-medium">Aucun cas configuré</p>
+                    <p className="text-slate-400 text-sm font-medium">Aucune situation configurée</p>
                   </div>
                 )}
-                {meetingState.cases.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
-                      meetingState.activeIndex === index
-                        ? 'bg-indigo-50/50 border-indigo-100'
-                        : 'bg-white border-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
-                          item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
-                      </div>
-                      <span
-                        className={`font-bold text-lg ${
-                          item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
-                        }`}
-                      >
-                        {item.name}
+                {meetingState.cases.length > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-sky-500"></span>PEDO 1
                       </span>
+                      <span>{groupedCases.pedo1.length}</span>
                     </div>
-                    <div className="text-right">
-                      <div className="text-xs font-mono font-bold text-slate-400">
-                        {Math.floor(item.plannedSeconds / 60)}m
-                      </div>
+                    {groupedCases.pedo1.map((item) => {
+                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                            meetingState.activeIndex === index
+                              ? 'bg-sky-50/60 border-sky-100'
+                              : 'bg-white border-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
+                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
+                            </div>
+                            <span
+                              className={`font-bold text-lg ${
+                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
+                              }`}
+                            >
+                              {item.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <div className="text-xs font-mono font-bold text-slate-400">
+                                {Math.floor(item.plannedSeconds / 60)}m
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => requestDeletePatient(item.id)}
+                              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all ${
+                                confirmDeleteId === item.id
+                                  ? 'bg-rose-500 text-white shadow-sm'
+                                  : 'bg-slate-100 text-slate-400 hover:text-rose-500'
+                              }`}
+                            >
+                              {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 pt-3">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>PEDO 2
+                      </span>
+                      <span>{groupedCases.pedo2.length}</span>
                     </div>
-                  </div>
-                ))}
+                    {groupedCases.pedo2.map((item) => {
+                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
+                            meetingState.activeIndex === index
+                              ? 'bg-emerald-50/60 border-emerald-100'
+                              : 'bg-white border-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
+                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
+                            </div>
+                            <span
+                              className={`font-bold text-lg ${
+                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
+                              }`}
+                            >
+                              {item.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <div className="text-xs font-mono font-bold text-slate-400">
+                                {Math.floor(item.plannedSeconds / 60)}m
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => requestDeletePatient(item.id)}
+                              className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg transition-all ${
+                                confirmDeleteId === item.id
+                                  ? 'bg-rose-500 text-white shadow-sm'
+                                  : 'bg-slate-100 text-slate-400 hover:text-rose-500'
+                              }`}
+                            >
+                              {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </div>
 
@@ -401,7 +537,7 @@ export default function App() {
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-[#f8f9ff] p-5 rounded-2xl border border-indigo-50">
-                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / cas</div>
+                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / situation</div>
                   <div className="text-3xl font-black text-slate-800">
                     {meetingState.cases.length
                       ? Math.round((meetingState.duration - meetingState.breakTime) / meetingState.cases.length)
@@ -494,7 +630,7 @@ export default function App() {
 
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                    Cas à traiter &amp; priorités
+                    Situations à traiter &amp; priorités
                   </label>
                   <div className="space-y-3">
                     {meetingState.cases.map((item, index) => (
@@ -533,13 +669,14 @@ export default function App() {
                           </div>
                         </div>
                         <button
-                          onClick={() => {
-                            const newCases = meetingState.cases.filter((_, idx) => idx !== index);
-                            updateConfig({ cases: newCases });
-                          }}
-                          className="text-slate-200 hover:text-rose-500 p-3 transition-all opacity-0 group-hover:opacity-100"
+                          onClick={() => requestDeletePatient(item.id)}
+                          className={`text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-all ${
+                            confirmDeleteId === item.id
+                              ? 'bg-rose-500 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-400 hover:text-rose-500'
+                          }`}
                         >
-                          <Trash2 size={22} />
+                          {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
                         </button>
                       </div>
                     ))}
