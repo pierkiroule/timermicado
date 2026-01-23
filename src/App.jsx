@@ -101,6 +101,7 @@ const formatTime = (seconds) => {
 export default function App() {
   const [meetingState, setMeetingState] = useState(loadState);
   const [showConfig, setShowConfig] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [bulkInput, setBulkInput] = useState('');
@@ -343,7 +344,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-5xl mx-auto">
-        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            className="absolute top-4 right-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-indigo-500 transition-all bg-slate-50 px-3 py-2 rounded-full border border-slate-100"
+          >
+            tuto
+          </button>
           <div className="flex items-center gap-4">
             <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-indigo-100 shadow-xl">
               <Clock size={28} />
@@ -797,6 +805,92 @@ export default function App() {
                   className="flex-1 bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
                 >
                   Démarrer le staff
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showTutorial && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+                <div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                    Tutoriel rapide
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-800">Comment utiliser le timer</h2>
+                </div>
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  className="bg-white text-slate-400 hover:text-rose-500 p-3 rounded-xl transition-all shadow-sm border border-slate-100"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="p-10 space-y-6 text-slate-600 text-sm leading-relaxed">
+                <p>
+                  Ce timer est conçu pour rythmer votre staff MICADO : il répartit automatiquement le temps
+                  disponible entre chaque situation clinique selon la priorité choisie.
+                </p>
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <span className="text-indigo-500 font-black">1.</span>
+                    <div>
+                      <div className="font-bold text-slate-800">Configurez la séance</div>
+                      <p>
+                        Ouvrez les paramètres pour fixer la durée totale du staff et le temps de pause.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-indigo-500 font-black">2.</span>
+                    <div>
+                      <div className="font-bold text-slate-800">Ajoutez les situations</div>
+                      <p>
+                        Importez vos patients (1 nom par ligne) puis ajustez la priorité P1 à P5 : plus la
+                        priorité est élevée, plus le temps alloué est important.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-indigo-500 font-black">3.</span>
+                    <div>
+                      <div className="font-bold text-slate-800">Démarrez le chrono</div>
+                      <p>
+                        Cliquez sur « Démarrer » pour lancer le premier cas. Le compteur principal affiche le
+                        temps restant pour la situation en cours.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-indigo-500 font-black">4.</span>
+                    <div>
+                      <div className="font-bold text-slate-800">Passez au cas suivant</div>
+                      <p>
+                        Utilisez « Suivant » dès qu’un cas est conclu. Le timer passe automatiquement au
+                        dossier suivant et conserve l’écart de temps pour la synthèse.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-4">
+                    <span className="text-indigo-500 font-black">5.</span>
+                    <div>
+                      <div className="font-bold text-slate-800">Clôturez et exportez</div>
+                      <p>
+                        Une fois la session terminée, consultez la synthèse pédagogique et exportez le tableau
+                        Excel pour l’archivage.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="p-8 bg-white border-t border-slate-50 flex gap-4">
+                <button
+                  onClick={() => setShowTutorial(false)}
+                  className="flex-1 bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
+                >
+                  Compris !
                 </button>
               </div>
             </div>
