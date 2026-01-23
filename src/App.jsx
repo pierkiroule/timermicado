@@ -10,7 +10,6 @@ import {
   Plus,
   Settings,
   SkipForward,
-  Trash2,
   X
 } from 'lucide-react';
 
@@ -103,6 +102,7 @@ export default function App() {
   const [meetingState, setMeetingState] = useState(loadState);
   const [showConfig, setShowConfig] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [bulkInput, setBulkInput] = useState('');
   const [currentTime, setCurrentTime] = useState(() =>
     new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
@@ -224,9 +224,28 @@ export default function App() {
       return;
     }
 
-    setMeetingState(defaultState);
+    setMeetingState({
+      ...defaultState,
+      cases: [],
+      totalSecondsLeft: defaultState.duration * 60,
+      currentCaseSecondsLeft: 0
+    });
     setShowConfig(false);
     setConfirmReset(false);
+    setConfirmDeleteId(null);
+  };
+
+  const requestDeletePatient = (id) => {
+    if (confirmDeleteId === id) {
+      const newCases = meetingState.cases.filter((item) => item.id !== id);
+      updateConfig({ cases: newCases });
+      setConfirmDeleteId(null);
+      return;
+    }
+    setConfirmDeleteId(id);
+    window.setTimeout(() => {
+      setConfirmDeleteId((current) => (current === id ? null : current));
+    }, 3000);
   };
 
   const exportToExcel = async () => {
@@ -300,8 +319,7 @@ export default function App() {
                 </div>
                 <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tight">Staff complété !</h2>
                 <p className="text-slate-500 mb-10 max-w-md mx-auto text-lg">
-                  Toutes les situations cliniques ont été discutées. Exportez le compte-rendu pour votre
-                  synthèse.
+                  Toutes les situations cliniques ont été discutées. Exportez le compte-rendu pour votre synthèse.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <button
@@ -403,7 +421,7 @@ export default function App() {
               <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                 {meetingState.cases.length === 0 && (
                   <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <p className="text-slate-400 text-sm font-medium">Aucun cas configuré</p>
+                    <p className="text-slate-400 text-sm font-medium">Aucune situation configurée</p>
                   </div>
                 )}
                 {meetingState.cases.length > 0 && (
@@ -501,7 +519,7 @@ export default function App() {
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-[#f8f9ff] p-5 rounded-2xl border border-indigo-50">
-                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / cas</div>
+                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / situation</div>
                   <div className="text-3xl font-black text-slate-800">
                     {meetingState.cases.length
                       ? Math.round((meetingState.duration - meetingState.breakTime) / meetingState.cases.length)
@@ -594,7 +612,7 @@ export default function App() {
 
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                    Cas à traiter &amp; priorités
+                    Situations à traiter &amp; priorités
                   </label>
                   <div className="space-y-3">
                     {meetingState.cases.map((item, index) => (
@@ -633,13 +651,14 @@ export default function App() {
                           </div>
                         </div>
                         <button
-                          onClick={() => {
-                            const newCases = meetingState.cases.filter((_, idx) => idx !== index);
-                            updateConfig({ cases: newCases });
-                          }}
-                          className="text-slate-200 hover:text-rose-500 p-3 transition-all opacity-0 group-hover:opacity-100"
+                          onClick={() => requestDeletePatient(item.id)}
+                          className={`text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-all ${
+                            confirmDeleteId === item.id
+                              ? 'bg-rose-500 text-white shadow-sm'
+                              : 'bg-slate-100 text-slate-400 hover:text-rose-500'
+                          }`}
                         >
-                          <Trash2 size={22} />
+                          {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
                         </button>
                       </div>
                     ))}
