@@ -44,12 +44,12 @@ const defaultCases = [
 }));
 
 const defaultState = {
-  duration: 60,
-  breakTime: 5,
+  duration: 180,
+  breakTime: 10,
   cases: defaultCases,
   activeIndex: -1,
   isRunning: false,
-  totalSecondsLeft: 60 * 60,
+  totalSecondsLeft: 180 * 60,
   currentCaseSecondsLeft: 0
 };
 
