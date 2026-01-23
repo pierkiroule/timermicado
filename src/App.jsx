@@ -281,6 +281,65 @@ export default function App() {
     };
   }, [meetingState.cases]);
 
+  const synthesisData = useMemo(() => {
+    const completedCases = meetingState.cases.filter((item) => item.completed);
+    const totalCompleted = completedCases.length;
+    const onTime = completedCases.filter((item) => (item.remainingAtCompletion ?? 0) >= 0).length;
+    const overTime = completedCases.filter((item) => (item.remainingAtCompletion ?? 0) < 0).length;
+    const noData = Math.max(totalCompleted - onTime - overTime, 0);
+    const ratio = (count) => (totalCompleted ? (count / totalCompleted) * 100 : 0);
+
+    const segments = [
+      {
+        key: 'on-time',
+        label: 'Temps respecté',
+        description: 'Cas terminés dans le temps prévu (aucun dépassement).',
+        count: onTime,
+        color: '#22c55e',
+        soft: '#ecfdf5'
+      },
+      {
+        key: 'over-time',
+        label: 'Dépassement',
+        description: 'Cas qui ont dépassé le temps alloué.',
+        count: overTime,
+        color: '#f97316',
+        soft: '#fff7ed'
+      },
+      {
+        key: 'no-data',
+        label: 'Sans donnée',
+        description: 'Cas clôturés sans chrono enregistré.',
+        count: noData,
+        color: '#94a3b8',
+        soft: '#f1f5f9'
+      }
+    ];
+
+    const percentages = segments.map((segment) => ratio(segment.count));
+    const stops = percentages.reduce((acc, percent) => {
+      const total = acc.total + percent;
+      acc.values.push(total);
+      acc.total = total;
+      return acc;
+    }, { total: 0, values: [] });
+
+    const gradient = segments
+      .map((segment, index) => {
+        const start = index === 0 ? 0 : stops.values[index - 1];
+        const end = stops.values[index];
+        return `${segment.color} ${start}% ${end}%`;
+      })
+      .join(', ');
+
+    return {
+      totalCompleted,
+      segments,
+      percentages,
+      gradient: totalCompleted ? `conic-gradient(${gradient})` : 'conic-gradient(#e2e8f0 0 100%)'
+    };
+  }, [meetingState.cases]);
+
   return (
     <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
       <div className="max-w-5xl mx-auto">
@@ -334,6 +393,58 @@ export default function App() {
                   >
                     <Settings size={20} /> Nouvelle session
                   </button>
+                </div>
+                <div className="mt-12 grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-8 text-left">
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em]">
+                      Synthèse chrono
+                    </div>
+                    <div
+                      className="w-52 h-52 rounded-full shadow-inner border border-slate-100 flex items-center justify-center"
+                      style={{ background: synthesisData.gradient }}
+                    >
+                      <div className="w-32 h-32 bg-white rounded-full border border-slate-100 flex flex-col items-center justify-center text-center">
+                        <div className="text-xs font-black text-slate-400 uppercase tracking-widest">Cas traités</div>
+                        <div className="text-3xl font-black text-slate-800">
+                          {synthesisData.totalCompleted}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-400">
+                      Répartition basée sur les temps enregistrés.
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-black text-slate-800">Lecture ultra pédagogique</h3>
+                    <p className="text-slate-500 text-sm">
+                      Chaque couleur représente une manière dont le temps a été consommé pendant le staff.
+                      Servez-vous de cette synthèse pour ajuster la prochaine séance (réduire, maintenir ou
+                      rééquilibrer les durées).
+                    </p>
+                    <div className="grid gap-4">
+                      {synthesisData.segments.map((segment, index) => (
+                        <div
+                          key={segment.key}
+                          className="flex flex-col sm:flex-row sm:items-center gap-3 bg-slate-50/70 border border-slate-100 rounded-2xl p-4"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="w-4 h-4 rounded-full"
+                              style={{ backgroundColor: segment.color }}
+                            ></span>
+                            <div className="font-bold text-slate-700">{segment.label}</div>
+                          </div>
+                          <div className="text-xs text-slate-500 flex-1">{segment.description}</div>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                            <span className="px-2 py-1 rounded-full" style={{ backgroundColor: segment.soft }}>
+                              {synthesisData.percentages[index]?.toFixed(0)}%
+                            </span>
+                            <span>{segment.count} cas</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             ) : (
