@@ -224,9 +224,15 @@ export default function App() {
       return;
     }
 
-    setMeetingState(defaultState);
+    setMeetingState({
+      ...defaultState,
+      cases: [],
+      totalSecondsLeft: defaultState.duration * 60,
+      currentCaseSecondsLeft: 0
+    });
     setShowConfig(false);
     setConfirmReset(false);
+    setConfirmDeleteId(null);
   };
 
   const requestDeletePatient = (id) => {
