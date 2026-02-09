@@ -48,6 +48,13 @@ const formatMMSS = (ms) => {
   return `${mm}:${ss}`;
 };
 
+const formatDeltaMMSS = (ms) => {
+  const s = Math.max(0, Math.floor(Math.abs(ms) / 1000));
+  const mm = pad2(Math.floor(s / 60));
+  const ss = pad2(s % 60);
+  return `${mm}:${ss}`;
+};
+
 const buildInitialSituations = (n) =>
   Array.from({ length: n }, (_, i) => ({
     id: i + 1,
@@ -411,6 +418,13 @@ export default function App() {
   }, [timerState]);
 
   const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
+  const totalRemainingMs = timerState.isConfigured ? getTotalRemainingMs(timerState, wallNow) : 0;
+  const totalDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const totalDeltaLabel =
+    totalDeltaMs > 0
+      ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
+      : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
+  const totalDeltaTone = totalDeltaMs > 0 ? 'red' : totalDeltaMs < 0 ? 'blue' : 'gray';
   const overtimeMs =
     !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
 
@@ -486,7 +500,7 @@ export default function App() {
 
   return (
     <div className="wrap">
-      <div className="row-between" style={{ marginBottom: '14px' }}>
+      <div className="topbar">
         <div>
           <h1>Timer MICADO</h1>
           <div className="sub">Version robuste : fin fixe, pause = compression, recalcul propre</div>
@@ -495,6 +509,19 @@ export default function App() {
           🗑️ Nouvelle session
         </button>
       </div>
+
+      {timerState.isConfigured && (
+        <div className="dashboard">
+          <div className="stat-card">
+            <div className="stat-label">Temps global restant</div>
+            <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-label">Avance / retard cumulée</div>
+            <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
+          </div>
+        </div>
+      )}
 
       {!timerState.isConfigured ? (
         <div id="configView" className="card">
@@ -590,10 +617,23 @@ export default function App() {
             <div className="hr"></div>
 
             <div className="col" style={{ gap: '10px' }}>
+              <div className="active-line">
+                <div className="active-metric">
+                  <span className="active-label">Durée restante</span>
+                  <span className="active-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</span>
+                </div>
+                <div className="active-metric">
+                  <span className="active-label">Retard</span>
+                  <span className={`active-value ${overtimeMs > 0 ? 'red' : 'blue'}`}>
+                    {overtimeMs > 0 ? formatMMSS(overtimeMs) : '00:00'}
+                  </span>
+                </div>
+              </div>
+              <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
               <div className="row-between">
                 <div className="badge gray">
                   Temps total restant :
-                  <span id="totalRemaining" className="mono">{formatMMSS(getTotalRemainingMs(timerState, wallNow))}</span>
+                  <span id="totalRemaining" className="mono">{formatMMSS(totalRemainingMs)}</span>
                 </div>
                 <div className="badge gray">
                   Situations : <span id="nbLabel">{timerState.situations.length}</span>
