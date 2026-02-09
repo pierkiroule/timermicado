@@ -22,7 +22,8 @@ body{
   box-shadow: var(--flat-shadow);
   padding:16px;
 }
-h1{margin:0;font-size:28px;letter-spacing:-.02em}
+.title-block{width:100%;text-align:center}
+h1{margin:0;font-size:36px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .row{display:flex;gap:10px;align-items:center}
 .row-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
@@ -111,6 +112,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
   .topbar .btn-danger{width:auto}
+  .title-block{flex:1}
   .list{max-height:520px}
 }
 

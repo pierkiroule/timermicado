@@ -47,13 +47,26 @@ const buildInitialSituations = (n) =>
   }));
 
 const normalizeState = (data) => {
+  const situations = Array.isArray(data.situations) ? data.situations : [];
   const initialCount =
     typeof data.initialCount === 'number' && data.initialCount > 0
       ? data.initialCount
-      : data.situations.length || 1;
+      : situations.length || 1;
+  const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
+  const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
+  const isConfigured =
+    Boolean(data.isConfigured) &&
+    situations.length > 0 &&
+    startAt !== null &&
+    endAt !== null &&
+    endAt > startAt;
 
   return {
     ...data,
+    isConfigured,
+    situations,
+    startAt: isConfigured ? startAt : null,
+    endAt: isConfigured ? endAt : null,
     initialCount
   };
 };
@@ -298,16 +311,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (
-      !initialAvgRef.current &&
-      timerState.startAt &&
-      timerState.endAt &&
-      timerState.situations.length > 0
-    ) {
+    const baselineCount = timerState.initialCount ?? timerState.situations.length;
+    if (!initialAvgRef.current && timerState.startAt && timerState.endAt && baselineCount > 0) {
       const totalInitialMs = timerState.endAt - timerState.startAt;
-      initialAvgRef.current = totalInitialMs / timerState.situations.length;
+      initialAvgRef.current = totalInitialMs / baselineCount;
     }
-  }, [timerState.startAt, timerState.endAt, timerState.situations.length]);
+  }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
   const activeCount = useMemo(
     () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
@@ -320,8 +329,8 @@ export default function App() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <div>
-          <h1>Timer MICADO</h1>
+        <div className="title-block">
+          <h1>MicadoTimer</h1>
           <div className="sub">
             Le camembert ne montre pas du temps passé, il montre la pression du temps sur les situations restantes.
           </div>
