@@ -206,12 +206,13 @@ export default function App() {
 
   const timePerActive = activeCount > 0 ? remainingGlobalMs / activeCount : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
-  const elapsedGlobalMs = timerState.isConfigured ? Math.max(0, wallNow - timerState.startAt) : 0;
   const initialCount = timerState.isConfigured
     ? Math.max(1, timerState.initialCount || timerState.situations.length || 1)
     : 1;
   const initialPerSituationMs = totalDurationMs / initialCount;
-  const delayMs = Math.max(0, elapsedGlobalMs - initialPerSituationMs);
+  const scoreMs = timePerActive - initialPerSituationMs;
+  const scoreLabel = scoreMs >= 0 ? 'Avance' : 'Retard';
+  const scoreBadge = scoreMs >= 0 ? 'blue' : 'red';
 
   return (
     <div className="wrap">
@@ -247,6 +248,12 @@ export default function App() {
             <div className="stat-card flat">
               <div className="stat-label">Temps par situation active</div>
               <div className="stat-value mono">{formatMMSS(timePerActive)}</div>
+            </div>
+            <div className="stat-card flat">
+              <div className="stat-label">Écart vs temps initial</div>
+              <div className={`stat-value ${scoreBadge}`}>
+                {scoreLabel} {scoreMs >= 0 ? '+' : '-'}{formatMMSS(Math.abs(scoreMs))}
+              </div>
             </div>
           </div>
         </div>
@@ -345,9 +352,6 @@ export default function App() {
                         <span className="mono">
                           {sit.state === 'ACTIVE' ? formatMMSS(timePerActive) : 'Pause'}
                         </span>
-                        {sit.state === 'ACTIVE' && delayMs > 0 && (
-                          <span className="badge red">⏱ Retard +{formatMMSS(delayMs)}</span>
-                        )}
                         <button
                           type="button"
                           className="btn-outline"
