@@ -409,7 +409,7 @@ export default function App() {
       <div className="topbar">
         <div className="title-block">
           <div className="logo">
-            <svg viewBox="0 0 220 60" role="img" aria-label="MicadoTimer">
+            <svg viewBox="0 0 260 60" role="img" aria-label="MicadoTimer">
               <title>MicadoTimer</title>
               <defs>
                 <linearGradient id="logo-glow" x1="0" y1="0" x2="1" y2="1">
