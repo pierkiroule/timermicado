@@ -332,7 +332,11 @@ export default function App() {
         <div className="title-block">
           <h1>MicadoTimer</h1>
           <div className="sub">
-            Le camembert ne montre pas du temps passé, il montre la pression du temps sur les situations restantes.
+            1) CADRER Fixons l’heure de fin et le nombre de tâches.
+            <br />
+            2) RÉGULER Observez et regulez le diagrame qui s&apos;ajuste en temps réel.
+            <br />
+            3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
         <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
