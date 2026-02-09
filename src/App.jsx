@@ -196,6 +196,20 @@ const CompressionPie = ({
           </pattern>
         </defs>
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
+        <g className="pie-halo" aria-hidden="true">
+          <circle className="pie-halo-bubble halo-1" cx="120" cy="8" r="3.2" />
+          <circle className="pie-halo-bubble halo-2" cx="168" cy="22" r="2.4" />
+          <circle className="pie-halo-bubble halo-3" cx="206" cy="62" r="2.8" />
+          <circle className="pie-halo-bubble halo-4" cx="216" cy="120" r="2.2" />
+          <circle className="pie-halo-bubble halo-5" cx="202" cy="176" r="2.6" />
+          <circle className="pie-halo-bubble halo-6" cx="170" cy="214" r="2.2" />
+          <circle className="pie-halo-bubble halo-7" cx="120" cy="232" r="3.1" />
+          <circle className="pie-halo-bubble halo-8" cx="70" cy="214" r="2.4" />
+          <circle className="pie-halo-bubble halo-9" cx="36" cy="176" r="2.8" />
+          <circle className="pie-halo-bubble halo-10" cx="26" cy="120" r="2.2" />
+          <circle className="pie-halo-bubble halo-11" cx="40" cy="62" r="2.6" />
+          <circle className="pie-halo-bubble halo-12" cx="72" cy="22" r="2.4" />
+        </g>
         {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
@@ -222,6 +236,7 @@ const CompressionPie = ({
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
+        <span className="badge gray">Temps moyen restant : {formatMMSS(avgNowMs)}</span>
         <span className="badge gray">Situations restantes : {remainingCount}</span>
       </div>
     </div>

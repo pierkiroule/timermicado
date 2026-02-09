@@ -130,6 +130,31 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 
 .pattern-bubbles{fill:#94a3b8;opacity:.45}
+.pie-halo{pointer-events:none}
+.pie-halo-bubble{
+  fill:#7dd3fc;
+  opacity:.65;
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:halo-float 4.2s ease-in-out infinite;
+}
+.pie-halo-bubble.halo-2{animation-delay:.4s;opacity:.55}
+.pie-halo-bubble.halo-3{animation-delay:.8s;opacity:.6}
+.pie-halo-bubble.halo-4{animation-delay:1.2s;opacity:.5}
+.pie-halo-bubble.halo-5{animation-delay:1.6s;opacity:.62}
+.pie-halo-bubble.halo-6{animation-delay:2s;opacity:.5}
+.pie-halo-bubble.halo-7{animation-delay:2.4s;opacity:.6}
+.pie-halo-bubble.halo-8{animation-delay:2.8s;opacity:.55}
+.pie-halo-bubble.halo-9{animation-delay:3.2s;opacity:.6}
+.pie-halo-bubble.halo-10{animation-delay:3.6s;opacity:.5}
+.pie-halo-bubble.halo-11{animation-delay:4s;opacity:.62}
+.pie-halo-bubble.halo-12{animation-delay:4.4s;opacity:.55}
+
+@keyframes halo-float{
+  0%{transform:translate(0,0) scale(.9)}
+  50%{transform:translate(0,-6px) scale(1)}
+  100%{transform:translate(0,0) scale(.9)}
+}
 
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
