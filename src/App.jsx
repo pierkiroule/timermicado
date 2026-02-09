@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'micado_timer_ultra_robust_v2';
 
@@ -128,24 +128,13 @@ const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
   ].join(' ');
 };
 
-const CompressionPie = ({
-  situations,
-  startAt,
-  endAt,
-  wallNow,
-  initialAvgMs
-}) => {
+const CompressionPie = ({ situations, endAt, wallNow }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
-  const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const tempoScore = initialAvgMs ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = clamp(-tempoScore, 0, 1);
-  const hatchedAngle = compression * 360;
-  const remainingAngle = 360 - hatchedAngle;
-  const anglePerSituation = remainingCount > 0 ? remainingAngle / remainingCount : 0;
+  const anglePerSituation = remainingCount > 0 ? 360 / remainingCount : 0;
 
   const slices = [];
-  let cursor = -90 + hatchedAngle;
+  let cursor = -90;
 
   situations.forEach((sit, index) => {
     const startAngle = cursor + index * anglePerSituation;
@@ -158,35 +147,19 @@ const CompressionPie = ({
     });
   });
 
-  const hatchedPath =
-    hatchedAngle > 0 ? describeArc(120, 120, 100, -90, -90 + hatchedAngle) : null;
-
   return (
     <div className="compression-pie">
-      <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Compression du temps">
-        <defs>
-          <pattern
-            id="compression-hatch"
-            width="10"
-            height="10"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
-          >
-            <rect width="10" height="10" fill="#f8fafc" />
-            <line x1="0" y1="0" x2="0" y2="10" stroke="#94a3b8" strokeWidth="4" />
-          </pattern>
-        </defs>
+      <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Répartition du temps">
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
-        {hatchedPath && <path d={hatchedPath} fill="url(#compression-hatch)" />}
         {slices.map((slice) => (
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
         <text x="120" y="112" textAnchor="middle" className="pie-label">
-          Compression
+          Temps restant
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
-          {(compression * 100).toFixed(0)}%
+          {formatMMSS(remainingGlobalMs)}
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
@@ -195,8 +168,8 @@ const CompressionPie = ({
         )}
       </svg>
       <div className="pie-meta">
-        <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
-        <span className="badge gray">Situations restantes : {remainingCount}</span>
+        <span className="badge gray">Temps restant : {formatMMSS(remainingGlobalMs)}</span>
+        <span className="badge gray">Étapes en cours : {remainingCount}</span>
       </div>
     </div>
   );
@@ -211,7 +184,6 @@ export default function App() {
     end: ''
   });
   const tickRef = useRef(null);
-  const initialAvgRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -234,7 +206,6 @@ export default function App() {
 
     if (!configValues.end) return;
 
-    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -257,7 +228,6 @@ export default function App() {
       endAt: null,
       initialCount: null
     });
-    initialAvgRef.current = null;
     setShowReset(false);
   };
 
@@ -297,23 +267,6 @@ export default function App() {
     }));
   };
 
-  useEffect(() => {
-    if (
-      !initialAvgRef.current &&
-      timerState.startAt &&
-      timerState.endAt &&
-      timerState.situations.length > 0
-    ) {
-      const totalInitialMs = timerState.endAt - timerState.startAt;
-      initialAvgRef.current = totalInitialMs / timerState.situations.length;
-    }
-  }, [timerState.startAt, timerState.endAt, timerState.situations.length]);
-
-  const activeCount = useMemo(
-    () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
-    [timerState.situations]
-  );
-
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
 
@@ -323,7 +276,7 @@ export default function App() {
         <div>
           <h1>Timer MICADO</h1>
           <div className="sub">
-            Le camembert ne montre pas du temps passé, il montre la pression du temps sur les situations restantes.
+            Un minuteur clair pour suivre vos étapes et garder le rythme.
           </div>
         </div>
         <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
@@ -336,7 +289,7 @@ export default function App() {
           <div className="col" style={{ gap: '12px' }}>
             <div className="grid" style={{ gridTemplateColumns: '1fr', gap: '12px' }}>
               <div className="col">
-                <label>Nombre de situations</label>
+                <label>Nombre d'étapes</label>
                 <input
                   id="inpNb"
                   type="number"
@@ -352,7 +305,7 @@ export default function App() {
 
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div className="col">
-                <label>Heure fin</label>
+                <label>Heure de fin</label>
                 <input
                   id="inpEnd"
                   type="time"
@@ -363,95 +316,101 @@ export default function App() {
             </div>
 
             <button type="button" className="btn-primary" onClick={handleLaunch}>
-              🚀 Lancer
+              🚀 Démarrer
             </button>
 
-            <div className="sub">Le temps global est fixe. Les situations se partagent le temps restant.</div>
+            <div className="sub">Choisissez une heure limite, puis laissez le tableau de bord vous guider.</div>
           </div>
         </div>
       ) : (
-        <div id="runView" className="grid">
-          <div className="card">
-            <div className="row-between">
+        <div id="runView" className="section-grid">
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>Tableau de bord</h2>
+                <p className="sub">Gérez vos étapes et gardez la vue d'ensemble.</p>
+              </div>
               <div className="pill">
                 <span id="runState" className={`badge ${isFinished ? 'red' : 'gray'}`}>
                   {isFinished ? 'TERMINÉ' : 'EN COURS'}
                 </span>
               </div>
             </div>
-
-            <div className="hr"></div>
-
-            <div className="col" style={{ gap: '12px' }}>
-              <div className="sub">
-                Le camembert représente la compression temporelle instantanée et la répartition actuelle.
+            <div className="card">
+              <div className="row-between" style={{ marginBottom: '10px' }}>
+                <div className="row" style={{ gap: '10px' }}>
+                  <span className="badge gray">📋 Liste</span>
+                  <span className="badge gray">
+                    Étapes : <span id="nbLabel">{timerState.situations.length}</span>
+                  </span>
+                </div>
+                <button type="button" className="btn-outline" onClick={addSituation}>+ Ajouter</button>
               </div>
-              <CompressionPie
-                situations={timerState.situations}
-                startAt={timerState.startAt}
-                endAt={timerState.endAt}
-                wallNow={wallNow}
-                initialAvgMs={initialAvgRef.current}
-              />
-            </div>
-          </div>
 
-          <div className="card">
-            <div className="row-between" style={{ marginBottom: '10px' }}>
-              <div className="row" style={{ gap: '10px' }}>
-                <span className="badge gray">📋 Liste</span>
-                <span className="badge gray">
-                  Situations : <span id="nbLabel">{timerState.situations.length}</span>
-                </span>
-              </div>
-              <button type="button" className="btn-outline" onClick={addSituation}>+ Ajouter</button>
-            </div>
-
-            <div id="list" className="list">
-              {timerState.situations.map((sit) => (
-                <div
-                  key={sit.id}
-                  className="item"
-                  style={{
-                    background: `${sit.color}10`,
-                    borderColor: sit.state === 'ACTIVE' ? sit.color : 'transparent'
-                  }}
-                >
-                  <div className="col" style={{ gap: '10px' }}>
-                    <div className="row" style={{ gap: '10px', justifyContent: 'space-between' }}>
-                      <div className="row" style={{ gap: '10px' }}>
-                        <div className="dot" style={{ background: sit.color }}></div>
-                        <input
-                          data-name={sit.id}
-                          type="text"
-                          value={sit.name}
-                          onChange={(event) => updateSituationName(sit.id, event.target.value)}
-                        />
+              <div id="list" className="list">
+                {timerState.situations.map((sit) => (
+                  <div
+                    key={sit.id}
+                    className="item"
+                    style={{
+                      background: `${sit.color}10`,
+                      borderColor: sit.state === 'ACTIVE' ? sit.color : 'transparent'
+                    }}
+                  >
+                    <div className="col" style={{ gap: '10px' }}>
+                      <div className="row" style={{ gap: '10px', justifyContent: 'space-between' }}>
+                        <div className="row" style={{ gap: '10px' }}>
+                          <div className="dot" style={{ background: sit.color }}></div>
+                          <input
+                            data-name={sit.id}
+                            type="text"
+                            value={sit.name}
+                            onChange={(event) => updateSituationName(sit.id, event.target.value)}
+                          />
+                        </div>
+                        <span className="badge gray">{sit.state === 'ACTIVE' ? 'EN COURS' : 'PAUSE'}</span>
                       </div>
-                      <span className="badge gray">{sit.state === 'ACTIVE' ? 'ACTIVE' : 'PAUSE'}</span>
-                    </div>
-                    <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn-outline"
-                        onClick={() => toggleSituation(sit.id)}
-                      >
-                        {sit.state === 'ACTIVE' ? '⏸ Pause' : '▶️ Reprendre'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-outline danger"
-                        onClick={() => removeSituation(sit.id)}
-                        disabled={timerState.situations.length <= 1}
-                      >
-                        ✕ Supprimer
-                      </button>
+                      <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          onClick={() => toggleSituation(sit.id)}
+                        >
+                          {sit.state === 'ACTIVE' ? '⏸ Mettre en pause' : '▶️ Reprendre'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-outline danger"
+                          onClick={() => removeSituation(sit.id)}
+                          disabled={timerState.situations.length <= 1}
+                        >
+                          ✕ Supprimer
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          </section>
+
+          <section className="section">
+            <div className="section-head">
+              <div>
+                <h2>Camembert du temps</h2>
+                <p className="sub">Une lecture simple pour savoir où vous en êtes.</p>
+              </div>
+            </div>
+            <div className="card">
+              <div className="col" style={{ gap: '12px' }}>
+                <CompressionPie
+                  situations={timerState.situations}
+                  endAt={timerState.endAt}
+                  wallNow={wallNow}
+                />
+              </div>
+            </div>
+          </section>
         </div>
       )}
 

@@ -22,7 +22,8 @@ body{
   box-shadow: var(--flat-shadow);
   padding:16px;
 }
-h1{margin:0;font-size:28px;letter-spacing:-.02em}
+h1{margin:0;font-size:36px;letter-spacing:-.03em;font-weight:900}
+h2{margin:0;font-size:20px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .row{display:flex;gap:10px;align-items:center}
 .row-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
@@ -107,6 +108,22 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .pie-value{font-size:22px;fill:#0f172a;font-weight:900}
 .pie-sub{font-size:12px;fill:#94a3b8;font-weight:700}
 .pie-meta{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.section-grid{display:grid;gap:18px}
+.section{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.section .card{
+  border-radius:24px;
+  box-shadow: var(--shadow);
+}
 
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
@@ -116,4 +133,5 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 @media(min-width:900px){
   .grid{grid-template-columns: 420px 1fr}
+  .section-grid{grid-template-columns: 1.05fr .95fr}
 }
