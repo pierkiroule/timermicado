@@ -51,6 +51,18 @@ const buildInitialSituations = (n) =>
     state: 'ACTIVE'
   }));
 
+const normalizeState = (data) => {
+  const initialCount =
+    typeof data.initialCount === 'number' && data.initialCount > 0
+      ? data.initialCount
+      : data.situations.length || 1;
+
+  return {
+    ...data,
+    initialCount
+  };
+};
+
 const loadState = () => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -59,7 +71,8 @@ const loadState = () => {
         isConfigured: false,
         situations: [],
         startAt: null,
-        endAt: null
+        endAt: null,
+        initialCount: null
       };
     }
 
@@ -69,18 +82,20 @@ const loadState = () => {
         isConfigured: false,
         situations: [],
         startAt: null,
-        endAt: null
+        endAt: null,
+        initialCount: null
       };
     }
 
-    return data;
+    return normalizeState(data);
   } catch (error) {
     console.warn('Impossible de charger la session.', error);
     return {
       isConfigured: false,
       situations: [],
       startAt: null,
-      endAt: null
+      endAt: null,
+      initialCount: null
     };
   }
 };
@@ -124,7 +139,8 @@ export default function App() {
       isConfigured: true,
       situations: buildInitialSituations(n),
       startAt: now,
-      endAt
+      endAt,
+      initialCount: n
     });
   };
 
@@ -134,7 +150,8 @@ export default function App() {
       isConfigured: false,
       situations: [],
       startAt: null,
-      endAt: null
+      endAt: null,
+      initialCount: null
     });
     setShowReset(false);
   };
@@ -189,6 +206,12 @@ export default function App() {
 
   const timePerActive = activeCount > 0 ? remainingGlobalMs / activeCount : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const elapsedGlobalMs = timerState.isConfigured ? Math.max(0, wallNow - timerState.startAt) : 0;
+  const initialCount = timerState.isConfigured
+    ? Math.max(1, timerState.initialCount || timerState.situations.length || 1)
+    : 1;
+  const initialPerSituationMs = totalDurationMs / initialCount;
+  const delayMs = Math.max(0, elapsedGlobalMs - initialPerSituationMs);
 
   return (
     <div className="wrap">
@@ -322,6 +345,9 @@ export default function App() {
                         <span className="mono">
                           {sit.state === 'ACTIVE' ? formatMMSS(timePerActive) : 'Pause'}
                         </span>
+                        {sit.state === 'ACTIVE' && delayMs > 0 && (
+                          <span className="badge red">⏱ Retard +{formatMMSS(delayMs)}</span>
+                        )}
                         <button
                           type="button"
                           className="btn-outline"
