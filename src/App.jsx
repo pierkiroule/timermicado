@@ -181,6 +181,16 @@ const CompressionPie = ({
     <div className="compression-pie">
       <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
         <defs>
+          <radialGradient id="bubble-gradient" cx="30%" cy="30%" r="70%">
+            <stop offset="0%" stopColor="#e0f2fe" stopOpacity="0.95" />
+            <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.3" />
+          </radialGradient>
+          <radialGradient id="halo-gradient" cx="50%" cy="50%" r="60%">
+            <stop offset="0%" stopColor="#e0f2fe" stopOpacity="0.9" />
+            <stop offset="60%" stopColor="#7dd3fc" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.2" />
+          </radialGradient>
           <pattern
             id="compression-bubbles"
             width="24"
