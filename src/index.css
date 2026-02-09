@@ -36,6 +36,8 @@ body{
   -webkit-backdrop-filter: var(--glass);
 }
 .title-block{width:100%;text-align:left}
+.logo{display:flex;align-items:center;margin-bottom:10px}
+.logo svg{width:180px;max-width:100%;height:auto}
 h1{margin:0;font-size:32px;letter-spacing:-.02em;color:var(--txt-strong)}
 .sub{color:var(--muted);font-size:13px;margin-top:6px;line-height:1.4}
 .row{display:flex;gap:10px;align-items:center}
@@ -144,7 +146,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
   opacity:.9;
   transform-box:fill-box;
   transform-origin:center;
-  animation:bubble-rise 3.2s ease-in-out infinite, bubble-pulse 2.6s ease-in-out infinite;
+  animation:
+    bubble-rise var(--bubble-duration, 3.2s) ease-in-out infinite,
+    bubble-pulse 2.6s ease-in-out infinite;
 }
 .pie-bubble.bubble-2{animation-delay:.5s;opacity:.85}
 .pie-bubble.bubble-3{animation-delay:1s;opacity:.8}
@@ -152,10 +156,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .pie-bubble.bubble-5{animation-delay:1.9s;opacity:.7}
 
 @keyframes bubble-rise{
-  0%{transform:translate(0,8px) scale(.4) rotate(0deg);opacity:0}
+  0%{transform:translate(0,8px) scale(calc(.4 * var(--bubble-scale, 1))) rotate(0deg);opacity:0}
   15%{opacity:.85}
   60%{opacity:.6}
-  100%{transform:translate(0,-28px) scale(1.1) rotate(10deg);opacity:0}
+  100%{transform:translate(0,-28px) scale(calc(1.1 * var(--bubble-scale, 1))) rotate(10deg);opacity:0}
 }
 
 @keyframes bubble-pulse{
