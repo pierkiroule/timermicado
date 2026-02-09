@@ -60,11 +60,11 @@ const getProgressNow = (state, wallNow) => {
   return state.pausedProgressAt ?? wallNow;
 };
 
-const syncPlan = (state, fromWallNow) => {
+const syncPlan = (state, fromWallNow, remainingFromWallNow = fromWallNow) => {
   const n = state.situations.length;
   const idx = clamp(state.currentIndex, 0, Math.max(0, n - 1));
   const remainingCount = n - idx;
-  const remainingMs = Math.max(0, state.endAt - fromWallNow);
+  const remainingMs = Math.max(0, state.endAt - remainingFromWallNow);
   const sliceMs = remainingCount > 0 ? remainingMs / remainingCount : 0;
 
   const plan =
@@ -90,7 +90,7 @@ const syncPlan = (state, fromWallNow) => {
   return {
     ...state,
     plan,
-    lastSyncAt: fromWallNow
+    lastSyncAt: remainingFromWallNow
   };
 };
 
@@ -216,7 +216,11 @@ export default function App() {
       const now = Date.now();
       setWallNow(now);
       setTimerState((prev) => {
-        if (!prev.isConfigured || prev.isPaused) return prev;
+        if (!prev.isConfigured) return prev;
+        if (prev.isPaused) {
+          const progressAnchor = prev.pausedProgressAt ?? now;
+          return syncPlan(prev, progressAnchor, now);
+        }
         const idx = prev.currentIndex;
         const p = prev.plan[idx];
         if (!p) return prev;
