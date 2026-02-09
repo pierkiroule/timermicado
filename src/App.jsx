@@ -151,8 +151,9 @@ const CompressionPie = ({
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const tempoScore = initialAvgMs ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = clamp(-tempoScore, 0, 1);
+  const tempoScore =
+    initialAvgMs && remainingCount > 0 ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
+  const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
   const pressureEmoji =
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
@@ -181,23 +182,48 @@ const CompressionPie = ({
       <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
         <defs>
           <pattern
-            id="compression-hatch"
-            width="10"
-            height="10"
+            id="compression-bubbles"
+            width="24"
+            height="24"
             patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
           >
-            <rect width="10" height="10" fill="#f8fafc" />
-            <line x1="0" y1="0" x2="0" y2="10" stroke="#94a3b8" strokeWidth="4" />
+            <rect width="24" height="24" fill="#f8fafc" />
+            <g className="pattern-bubbles">
+              <circle cx="6" cy="18" r="2.4" />
+              <circle cx="16" cy="8" r="1.8" />
+              <circle cx="20" cy="18" r="1.4" />
+              <circle cx="10" cy="12" r="1.2" />
+            </g>
           </pattern>
         </defs>
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
-        {hatchedPath && <path d={hatchedPath} fill="url(#compression-hatch)" />}
+        <g className="pie-halo" aria-hidden="true">
+          <circle className="pie-halo-bubble halo-1" cx="120" cy="8" r="3.2" />
+          <circle className="pie-halo-bubble halo-2" cx="168" cy="22" r="2.4" />
+          <circle className="pie-halo-bubble halo-3" cx="206" cy="62" r="2.8" />
+          <circle className="pie-halo-bubble halo-4" cx="216" cy="120" r="2.2" />
+          <circle className="pie-halo-bubble halo-5" cx="202" cy="176" r="2.6" />
+          <circle className="pie-halo-bubble halo-6" cx="170" cy="214" r="2.2" />
+          <circle className="pie-halo-bubble halo-7" cx="120" cy="232" r="3.1" />
+          <circle className="pie-halo-bubble halo-8" cx="70" cy="214" r="2.4" />
+          <circle className="pie-halo-bubble halo-9" cx="36" cy="176" r="2.8" />
+          <circle className="pie-halo-bubble halo-10" cx="26" cy="120" r="2.2" />
+          <circle className="pie-halo-bubble halo-11" cx="40" cy="62" r="2.6" />
+          <circle className="pie-halo-bubble halo-12" cx="72" cy="22" r="2.4" />
+        </g>
+        {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
-        <text x="120" y="112" textAnchor="middle" className="pie-label">
+        <g className="pie-bubbles" aria-hidden="true">
+          <circle className="pie-bubble bubble-1" cx="120" cy="120" r="2.6" />
+          <circle className="pie-bubble bubble-2" cx="126" cy="118" r="2.1" />
+          <circle className="pie-bubble bubble-3" cx="114" cy="122" r="1.8" />
+          <circle className="pie-bubble bubble-4" cx="132" cy="124" r="1.6" />
+          <circle className="pie-bubble bubble-5" cx="108" cy="118" r="1.4" />
+        </g>
+        <text x="120" y="110" textAnchor="middle" className="pie-emoji">
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
@@ -211,6 +237,7 @@ const CompressionPie = ({
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
+        <span className="badge gray">Temps moyen restant : {formatMMSS(avgNowMs)}</span>
         <span className="badge gray">Situations restantes : {remainingCount}</span>
       </div>
     </div>
@@ -457,7 +484,6 @@ export default function App() {
                         type="button"
                         className="btn-outline danger"
                         onClick={() => removeSituation(sit.id)}
-                        disabled={timerState.situations.length <= 1}
                       >
                         ✕ Supprimer
                       </button>
