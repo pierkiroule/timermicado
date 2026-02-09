@@ -151,8 +151,9 @@ const CompressionPie = ({
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const tempoScore = initialAvgMs ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = clamp(-tempoScore, 0, 1);
+  const tempoScore =
+    initialAvgMs && remainingCount > 0 ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
+  const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
   const pressureEmoji =
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
@@ -483,7 +484,6 @@ export default function App() {
                         type="button"
                         className="btn-outline danger"
                         onClick={() => removeSituation(sit.id)}
-                        disabled={timerState.situations.length <= 1}
                       >
                         ✕ Supprimer
                       </button>
