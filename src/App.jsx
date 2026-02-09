@@ -199,7 +199,6 @@ export default function App() {
   const [configValues, setConfigValues] = useState({
     nb: 5,
     pauseMin: 0,
-    start: '',
     end: ''
   });
   const deltaTimeoutRef = useRef(null);
@@ -257,11 +256,12 @@ export default function App() {
     const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
     const pauseMin = clamp(parseInt(configValues.pauseMin || '0', 10) || 0, 0, 240);
 
-    if (!configValues.start || !configValues.end) return;
+    if (!configValues.end) return;
 
-    let startAt = parseTimeToToday(configValues.start);
+    const now = Date.now();
+    const startAt = now;
     let endAt = parseTimeToToday(configValues.end);
-    if (endAt <= startAt) endAt += 24 * 60 * 60 * 1000;
+    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
 
     const baseState = {
       isConfigured: true,
@@ -278,8 +278,7 @@ export default function App() {
       initialPauseApplied: false
     };
 
-    const now = Date.now();
-    const from = Math.max(startAt, now);
+    const from = now;
     const nextState =
       baseState.initialPauseMs > 0 && !baseState.initialPauseApplied
         ? syncPlan({ ...baseState, initialPauseApplied: true }, from + baseState.initialPauseMs)
@@ -496,7 +495,7 @@ export default function App() {
               </span>
             </div>
 
-            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="grid" style={{ gridTemplateColumns: '1fr', gap: '12px' }}>
               <div className="col">
                 <label>Nombre de situations</label>
                 <input
@@ -526,17 +525,6 @@ export default function App() {
             </div>
 
             <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              <div className="col">
-                <label>Heure début</label>
-                <input
-                  id="inpStart"
-                  type="time"
-                  value={configValues.start}
-                  onChange={(event) =>
-                    setConfigValues((prev) => ({ ...prev, start: event.target.value }))
-                  }
-                />
-              </div>
               <div className="col">
                 <label>Heure fin</label>
                 <input
