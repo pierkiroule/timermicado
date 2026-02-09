@@ -178,7 +178,7 @@ const CompressionPie = ({
 
   return (
     <div className="compression-pie">
-      <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Compression du temps">
+      <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
         <defs>
           <pattern
             id="compression-hatch"
