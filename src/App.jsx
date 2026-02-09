@@ -47,13 +47,26 @@ const buildInitialSituations = (n) =>
   }));
 
 const normalizeState = (data) => {
+  const situations = Array.isArray(data.situations) ? data.situations : [];
   const initialCount =
     typeof data.initialCount === 'number' && data.initialCount > 0
       ? data.initialCount
-      : data.situations.length || 1;
+      : situations.length || 1;
+  const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
+  const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
+  const isConfigured =
+    Boolean(data.isConfigured) &&
+    situations.length > 0 &&
+    startAt !== null &&
+    endAt !== null &&
+    endAt > startAt;
 
   return {
     ...data,
+    isConfigured,
+    situations,
+    startAt: isConfigured ? startAt : null,
+    endAt: isConfigured ? endAt : null,
     initialCount
   };
 };
@@ -140,6 +153,8 @@ const CompressionPie = ({
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
   const tempoScore = initialAvgMs ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
   const compression = clamp(-tempoScore, 0, 1);
+  const pressureEmoji =
+    compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
   const remainingAngle = 360 - hatchedAngle;
   const anglePerSituation = remainingCount > 0 ? remainingAngle / remainingCount : 0;
@@ -183,7 +198,7 @@ const CompressionPie = ({
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
         <text x="120" y="112" textAnchor="middle" className="pie-label">
-          Compression
+          {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
           {(compression * 100).toFixed(0)}%
@@ -298,16 +313,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (
-      !initialAvgRef.current &&
-      timerState.startAt &&
-      timerState.endAt &&
-      timerState.situations.length > 0
-    ) {
+    const baselineCount = timerState.initialCount ?? timerState.situations.length;
+    if (!initialAvgRef.current && timerState.startAt && timerState.endAt && baselineCount > 0) {
       const totalInitialMs = timerState.endAt - timerState.startAt;
-      initialAvgRef.current = totalInitialMs / timerState.situations.length;
+      initialAvgRef.current = totalInitialMs / baselineCount;
     }
-  }, [timerState.startAt, timerState.endAt, timerState.situations.length]);
+  }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
   const activeCount = useMemo(
     () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
@@ -320,10 +331,14 @@ export default function App() {
   return (
     <div className="wrap">
       <div className="topbar">
-        <div>
-          <h1>Timer MICADO</h1>
+        <div className="title-block">
+          <h1>MicadoTimer</h1>
           <div className="sub">
-            Le camembert ne montre pas du temps passé, il montre la pression du temps sur les situations restantes.
+            1) CADRER Fixons l’heure de fin et le nombre de tâches.
+            <br />
+            2) RÉGULER Observez et regulez le diagrame qui s&apos;ajuste en temps réel.
+            <br />
+            3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
         <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
