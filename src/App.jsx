@@ -425,6 +425,12 @@ export default function App() {
       ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
       : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
   const totalDeltaTone = totalDeltaMs > 0 ? 'red' : totalDeltaMs < 0 ? 'blue' : 'gray';
+  const currentDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const currentDeltaLabel =
+    currentDeltaMs > 0
+      ? `Retard de ${formatDeltaMMSS(currentDeltaMs)}`
+      : `Avance de ${formatDeltaMMSS(currentDeltaMs)}`;
+  const currentDeltaTone = currentDeltaMs > 0 ? 'red' : currentDeltaMs < 0 ? 'blue' : 'gray';
   const overtimeMs =
     !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
 
@@ -511,15 +517,28 @@ export default function App() {
       </div>
 
       {timerState.isConfigured && (
-        <div className="dashboard">
-          <div className="stat-card">
-            <div className="stat-label">Temps global restant</div>
-            <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
+        <div className="hero-dashboard">
+          <div className="mini-dashboard">
+            <div className="stat-card emphasis">
+              <div className="stat-label">Durée globale restante</div>
+              <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Retard / avance cumulée</div>
+              <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
+            </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-label">Avance / retard cumulée</div>
-            <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
+          <div className="mini-dashboard secondary">
+            <div className="stat-card flat">
+              <div className="stat-label">Durée restante (situation)</div>
+              <div className="stat-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</div>
+            </div>
+            <div className="stat-card flat">
+              <div className="stat-label">Retard / avance (situation)</div>
+              <div className={`stat-value ${currentDeltaTone}`}>{currentDeltaLabel}</div>
+            </div>
           </div>
+          <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
         </div>
       )}
 
@@ -617,19 +636,6 @@ export default function App() {
             <div className="hr"></div>
 
             <div className="col" style={{ gap: '10px' }}>
-              <div className="active-line">
-                <div className="active-metric">
-                  <span className="active-label">Durée restante</span>
-                  <span className="active-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</span>
-                </div>
-                <div className="active-metric">
-                  <span className="active-label">Retard</span>
-                  <span className={`active-value ${overtimeMs > 0 ? 'red' : 'blue'}`}>
-                    {overtimeMs > 0 ? formatMMSS(overtimeMs) : '00:00'}
-                  </span>
-                </div>
-              </div>
-              <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
               <div className="row-between">
                 <div className="badge gray">
                   Temps total restant :
