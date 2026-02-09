@@ -1,68 +1,114 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertCircle,
-  BarChart3,
-  CheckCircle2,
-  ClipboardList,
-  Clock,
-  Download,
-  Play,
-  Plus,
-  Settings,
-  SkipForward,
-  X
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const COMPLETED_INDEX = 999;
-const STORAGE_KEY = 'timermicado-state-v1';
+const STORAGE_KEY = 'micado_timer_ultra_robust_v1';
 
-const defaultCases = [
-  { name: 'Louis', type: 'pedo1' },
-  { name: 'Iza', type: 'pedo1' },
-  { name: 'Lou', type: 'pedo1' },
-  { name: 'Zoé', type: 'pedo1' },
-  { name: 'Noa', type: 'pedo1' },
-  { name: 'Malo', type: 'pedo1' },
-  { name: 'Jade', type: 'pedo1' },
-  { name: 'Eli', type: 'pedo1' },
-  { name: 'Tao', type: 'pedo2' },
-  { name: 'Mia', type: 'pedo2' },
-  { name: 'Léa', type: 'pedo2' },
-  { name: 'Sami', type: 'pedo2' },
-  { name: 'Noé', type: 'pedo2' },
-  { name: 'Lina', type: 'pedo2' },
-  { name: 'Éden', type: 'pedo2' }
-].map((item) => ({
-  id: crypto.randomUUID(),
-  name: item.name,
-  type: item.type,
-  priority: 3,
-  plannedSeconds: 0,
-  completed: false,
-  remainingAtCompletion: null
-}));
+const COLORS = [
+  '#6366f1',
+  '#8b5cf6',
+  '#ec4899',
+  '#f59e0b',
+  '#10b981',
+  '#06b6d4',
+  '#ef4444',
+  '#84cc16',
+  '#f97316',
+  '#a855f7',
+  '#14b8a6',
+  '#f43f5e',
+  '#22c55e',
+  '#eab308',
+  '#3b82f6'
+];
 
-const defaultState = {
-  duration: 180,
-  breakTime: 10,
-  cases: defaultCases,
-  activeIndex: -1,
-  isRunning: false,
-  totalSecondsLeft: 180 * 60,
-  currentCaseSecondsLeft: 0
+const pad2 = (n) => String(n).padStart(2, '0');
+
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
+const parseTimeToToday = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.getTime();
 };
 
-const calculateDurations = (config) => {
-  const totalPoints = config.cases.reduce((acc, item) => acc + (item.priority || 3), 0);
-  const availableSeconds = Math.max((config.duration - config.breakTime) * 60, 0);
+const formatClock = (ts) => {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+};
 
-  return config.cases.map((item) => ({
-    ...item,
-    plannedSeconds:
-      totalPoints > 0
-        ? Math.floor(((item.priority || 3) / totalPoints) * availableSeconds)
-        : 0
+const formatHHMM = (ts) => {
+  const d = new Date(ts);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
+const formatMMSS = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = pad2(Math.floor(s / 60));
+  const ss = pad2(s % 60);
+  return `${mm}:${ss}`;
+};
+
+const formatDeltaMMSS = (ms) => {
+  const s = Math.max(0, Math.floor(Math.abs(ms) / 1000));
+  const mm = pad2(Math.floor(s / 60));
+  const ss = pad2(s % 60);
+  return `${mm}:${ss}`;
+};
+
+const buildInitialSituations = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    name: `Situation ${i + 1}`,
+    color: COLORS[i % COLORS.length]
   }));
+
+const getProgressNow = (state, wallNow) => {
+  if (!state.isPaused) return wallNow;
+  return state.pausedProgressAt ?? wallNow;
+};
+
+const syncPlan = (state, fromWallNow, remainingFromWallNow = fromWallNow) => {
+  const n = state.situations.length;
+  const idx = clamp(state.currentIndex, 0, Math.max(0, n - 1));
+  const remainingCount = n - idx;
+  const remainingMs = Math.max(0, state.endAt - remainingFromWallNow);
+  const sliceMs = remainingCount > 0 ? remainingMs / remainingCount : 0;
+
+  const plan =
+    Array.isArray(state.plan) && state.plan.length === n
+      ? state.plan.map((entry) => ({ ...entry }))
+      : new Array(n).fill(null).map(() => ({ plannedStart: null, plannedEnd: null }));
+
+  let cursor = fromWallNow;
+  for (let i = idx; i < n; i += 1) {
+    plan[i] = {
+      plannedStart: cursor,
+      plannedEnd: cursor + sliceMs
+    };
+    cursor += sliceMs;
+  }
+
+  for (let i = 0; i < idx; i += 1) {
+    if (!plan[i] || plan[i].plannedStart == null || plan[i].plannedEnd == null) {
+      plan[i] = { plannedStart: state.startAt, plannedEnd: state.startAt };
+    }
+  }
+
+  return {
+    ...state,
+    plan,
+    lastSyncAt: remainingFromWallNow
+  };
+};
+
+const syncFuturePlan = (state, fromWallNow) => {
+  const nextIndex = state.currentIndex + 1;
+  if (nextIndex >= state.situations.length) return state;
+  const tempState = syncPlan({ ...state, currentIndex: nextIndex }, fromWallNow);
+  return {
+    ...tempState,
+    currentIndex: state.currentIndex
+  };
 };
 
 const loadState = () => {
@@ -70,832 +116,712 @@ const loadState = () => {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return {
-        ...defaultState,
-        cases: calculateDurations(defaultState)
+        isConfigured: false,
+        situations: [],
+        currentIndex: 0,
+        startAt: null,
+        endAt: null,
+        isPaused: false,
+        pauseStartedAt: null,
+        pausedProgressAt: null,
+        plan: [],
+        lastSyncAt: null,
+        initialPauseMs: 0,
+        initialPauseApplied: false
       };
     }
-    const parsed = JSON.parse(raw);
-    const merged = {
-      ...defaultState,
-      ...parsed
-    };
-    merged.cases = calculateDurations(merged);
-    return merged;
-  } catch (error) {
-    console.warn('Impossible de charger le dernier état.', error);
+
+    const data = JSON.parse(raw);
+    if (!data || !data.isConfigured || !Array.isArray(data.situations)) {
+      return {
+        isConfigured: false,
+        situations: [],
+        currentIndex: 0,
+        startAt: null,
+        endAt: null,
+        isPaused: false,
+        pauseStartedAt: null,
+        pausedProgressAt: null,
+        plan: [],
+        lastSyncAt: null,
+        initialPauseMs: 0,
+        initialPauseApplied: false
+      };
+    }
+
+    const plan =
+      Array.isArray(data.plan) && data.plan.length === data.situations.length
+        ? data.plan
+        : new Array(data.situations.length).fill(null).map(() => ({ plannedStart: null, plannedEnd: null }));
+
     return {
-      ...defaultState,
-      cases: calculateDurations(defaultState)
+      ...data,
+      plan
+    };
+  } catch (error) {
+    console.warn('Impossible de charger la session.', error);
+    return {
+      isConfigured: false,
+      situations: [],
+      currentIndex: 0,
+      startAt: null,
+      endAt: null,
+      isPaused: false,
+      pauseStartedAt: null,
+      pausedProgressAt: null,
+      plan: [],
+      lastSyncAt: null,
+      initialPauseMs: 0,
+      initialPauseApplied: false
     };
   }
 };
 
-const formatTime = (seconds) => {
-  const isNegative = seconds < 0;
-  const absSeconds = Math.abs(seconds);
-  const minutes = Math.floor(absSeconds / 60);
-  const rest = absSeconds % 60;
-  return `${isNegative ? '-' : ''}${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+const getSliceStatus = (state, index, wallNow) => {
+  const p = state.plan[index];
+  if (!p || p.plannedStart == null || p.plannedEnd == null) {
+    return { isPast: false, isActive: false, isFuture: true, progress: 0, remainingMs: 0, durationMs: 0 };
+  }
+  const duration = Math.max(0, p.plannedEnd - p.plannedStart);
+  const progressNow = getProgressNow(state, wallNow);
+  const remaining = Math.max(0, p.plannedEnd - progressNow);
+  const isPast = progressNow >= p.plannedEnd;
+  const isFuture = progressNow < p.plannedStart;
+  const isActive = !isPast && !isFuture;
+
+  let prog = 0;
+  if (duration > 0) {
+    prog = clamp(((progressNow - p.plannedStart) / duration) * 100, 0, 100);
+  } else {
+    prog = isPast ? 100 : 0;
+  }
+
+  return {
+    isPast,
+    isActive,
+    isFuture,
+    progress: prog,
+    remainingMs: remaining,
+    durationMs: duration
+  };
 };
 
+const getTotalRemainingMs = (state, wallNow) => Math.max(0, state.endAt - wallNow);
+
 export default function App() {
-  const [meetingState, setMeetingState] = useState(loadState);
-  const [showConfig, setShowConfig] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [bulkInput, setBulkInput] = useState('');
-  const [currentTime, setCurrentTime] = useState(() =>
-    new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-  );
-  const timerRef = useRef(null);
+  const [timerState, setTimerState] = useState(loadState);
+  const [wallNow, setWallNow] = useState(() => Date.now());
+  const [showReset, setShowReset] = useState(false);
+  const [deltaInfo, setDeltaInfo] = useState(null);
+  const [configValues, setConfigValues] = useState({
+    nb: 5,
+    pauseMin: 0,
+    end: ''
+  });
+  const deltaTimeoutRef = useRef(null);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(meetingState));
-  }, [meetingState]);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(timerState));
+    } catch (error) {
+      console.warn('Impossible de sauvegarder la session.', error);
+    }
+  }, [timerState]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }));
-    }, 1000);
+      const now = Date.now();
+      setWallNow(now);
+      setTimerState((prev) => {
+        if (!prev.isConfigured) return prev;
+        if (prev.isPaused) {
+          const progressAnchor = prev.pausedProgressAt ?? now;
+          return syncPlan(prev, progressAnchor, now);
+        }
+        const idx = prev.currentIndex;
+        const p = prev.plan[idx];
+        if (!p) return prev;
+        if (now >= p.plannedEnd) {
+          return syncFuturePlan(prev, now);
+        }
+        return prev;
+      });
+    }, 250);
 
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    if (meetingState.isRunning && meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX) {
-      timerRef.current = window.setInterval(() => {
-        setMeetingState((prev) => ({
-          ...prev,
-          totalSecondsLeft: prev.totalSecondsLeft - 1,
-          currentCaseSecondsLeft: prev.currentCaseSecondsLeft - 1
-        }));
-      }, 1000);
-    } else {
-      window.clearInterval(timerRef.current);
+  useEffect(() => () => window.clearTimeout(deltaTimeoutRef.current), []);
+
+  const showDelta = useCallback((deltaMs) => {
+    if (deltaMs == null) return;
+    const abs = Math.abs(deltaMs);
+    const mm = Math.floor(abs / 60000);
+    const ss = Math.floor((abs % 60000) / 1000);
+    const sign = deltaMs < 0 ? -1 : 1;
+    const label = `${pad2(mm)}:${pad2(ss)}`;
+
+    let message = { tone: 'gray', label: "À l'heure" };
+    if (sign < 0) {
+      message = { tone: 'blue', label: `En avance : ${label}` };
+    } else if (sign > 0) {
+      message = { tone: 'red', label: `En retard : ${label}` };
     }
 
-    return () => window.clearInterval(timerRef.current);
-  }, [meetingState.isRunning, meetingState.activeIndex]);
+    setDeltaInfo(message);
+    window.clearTimeout(deltaTimeoutRef.current);
+    deltaTimeoutRef.current = window.setTimeout(() => setDeltaInfo(null), 2200);
+  }, []);
 
-  const updateConfig = (updates) => {
-    setMeetingState((prev) => {
-      const nextState = { ...prev, ...updates };
-      nextState.cases = calculateDurations(nextState);
+  const handleLaunch = () => {
+    const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
+    const pauseMin = clamp(parseInt(configValues.pauseMin || '0', 10) || 0, 0, 240);
 
-      if (nextState.activeIndex === -1) {
-        nextState.totalSecondsLeft = nextState.duration * 60;
-        nextState.currentCaseSecondsLeft = 0;
-      }
+    if (!configValues.end) return;
 
-      return nextState;
+    const now = Date.now();
+    const startAt = now;
+    let endAt = parseTimeToToday(configValues.end);
+    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
+
+    const baseState = {
+      isConfigured: true,
+      situations: buildInitialSituations(n),
+      currentIndex: 0,
+      startAt,
+      endAt,
+      isPaused: false,
+      pauseStartedAt: null,
+      pausedProgressAt: null,
+      plan: new Array(n).fill(null).map(() => ({ plannedStart: null, plannedEnd: null })),
+      lastSyncAt: null,
+      initialPauseMs: pauseMin * 60 * 1000,
+      initialPauseApplied: false
+    };
+
+    const from = now;
+    const nextState =
+      baseState.initialPauseMs > 0 && !baseState.initialPauseApplied
+        ? syncPlan({ ...baseState, initialPauseApplied: true }, from + baseState.initialPauseMs)
+        : syncPlan(baseState, from);
+
+    setTimerState(nextState);
+  };
+
+  const handleReset = () => {
+    window.localStorage.removeItem(STORAGE_KEY);
+    setTimerState({
+      isConfigured: false,
+      situations: [],
+      currentIndex: 0,
+      startAt: null,
+      endAt: null,
+      isPaused: false,
+      pauseStartedAt: null,
+      pausedProgressAt: null,
+      plan: [],
+      lastSyncAt: null,
+      initialPauseMs: 0,
+      initialPauseApplied: false
     });
+    setShowReset(false);
   };
 
-  const handleBulkImport = () => {
-    const names = bulkInput
-      .split('\n')
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
+  const handlePauseToggle = () => {
+    const now = Date.now();
+    if (!timerState.isConfigured) return;
 
-    if (names.length === 0) return;
-
-    const newCases = names.map((name) => ({
-      id: crypto.randomUUID(),
-      name,
-      type: 'pedo1',
-      priority: 3,
-      plannedSeconds: 0,
-      completed: false,
-      remainingAtCompletion: null
-    }));
-
-    updateConfig({ cases: [...meetingState.cases, ...newCases] });
-    setBulkInput('');
-  };
-
-  const handleNextCase = (forcedIndex) => {
-    setMeetingState((prev) => {
-      const currentIndex = prev.activeIndex;
-      const nextIndex = typeof forcedIndex === 'number' ? forcedIndex : currentIndex + 1;
-      const updatedCases = [...prev.cases];
-
-      if (currentIndex >= 0 && currentIndex < updatedCases.length) {
-        updatedCases[currentIndex] = {
-          ...updatedCases[currentIndex],
-          completed: true,
-          remainingAtCompletion: prev.currentCaseSecondsLeft
-        };
-      }
-
-      if (nextIndex < updatedCases.length) {
-        const nextCase = updatedCases[nextIndex];
-        return {
-          ...prev,
-          cases: updatedCases,
-          activeIndex: nextIndex,
-          isRunning: true,
-          currentCaseSecondsLeft: nextCase.plannedSeconds
-        };
-      }
-
-      return {
+    if (timerState.isPaused) {
+      setTimerState((prev) => syncPlan({
         ...prev,
-        cases: updatedCases,
-        isRunning: false,
-        activeIndex: COMPLETED_INDEX
-      };
-    });
-  };
-
-  const toggleTimer = () => {
-    if (!meetingState.isRunning && meetingState.activeIndex === -1) {
-      if (meetingState.cases.length === 0) return;
-      handleNextCase(0);
-      return;
-    }
-
-    updateConfig({ isRunning: !meetingState.isRunning });
-  };
-
-  const resetMeeting = () => {
-    if (!confirmReset) {
-      setConfirmReset(true);
-      window.setTimeout(() => setConfirmReset(false), 3000);
-      return;
-    }
-
-    setMeetingState({
-      ...defaultState,
-      cases: [],
-      totalSecondsLeft: defaultState.duration * 60,
-      currentCaseSecondsLeft: 0
-    });
-    setShowConfig(false);
-    setConfirmReset(false);
-    setConfirmDeleteId(null);
-  };
-
-  const requestDeletePatient = (id) => {
-    if (confirmDeleteId === id) {
-      const newCases = meetingState.cases.filter((item) => item.id !== id);
-      updateConfig({ cases: newCases });
-      setConfirmDeleteId(null);
-      return;
-    }
-    setConfirmDeleteId(id);
-    window.setTimeout(() => {
-      setConfirmDeleteId((current) => (current === id ? null : current));
-    }, 3000);
-  };
-
-  const exportToExcel = async () => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
-    script.onload = () => {
-      const data = meetingState.cases.map((item) => ({
-        Patient: item.name,
-        Priorité: item.priority,
-        'Temps prévu (min)': Math.round(item.plannedSeconds / 60),
-        Statut: item.completed ? 'Traité' : 'En attente',
-        'Écart (sec)': item.remainingAtCompletion ?? 0
+        isPaused: false,
+        pauseStartedAt: null,
+        pausedProgressAt: null
+      }, now));
+    } else {
+      setTimerState((prev) => ({
+        ...prev,
+        isPaused: true,
+        pauseStartedAt: now,
+        pausedProgressAt: now
       }));
-
-      const worksheet = window.XLSX.utils.json_to_sheet(data);
-      const workbook = window.XLSX.utils.book_new();
-      window.XLSX.utils.book_append_sheet(workbook, worksheet, 'Synthèse staff');
-      window.XLSX.writeFile(workbook, `Staff_MICADO_${new Date().toISOString().split('T')[0]}.xlsx`);
-    };
-    document.head.appendChild(script);
+    }
   };
 
-  const progressPercent = useMemo(() => {
-    if (meetingState.cases.length === 0) return 0;
-    const completed = meetingState.cases.filter((item) => item.completed).length;
-    return Math.round((completed / meetingState.cases.length) * 100);
-  }, [meetingState.cases]);
+  const jumpTo = (index) => {
+    const now = Date.now();
+    setTimerState((prev) => {
+      const idx = clamp(index, 0, prev.situations.length - 1);
+      const p = prev.plan[idx];
+      const deltaMs = p && p.plannedStart != null ? now - p.plannedStart : null;
+      showDelta(deltaMs);
+      return syncPlan({ ...prev, currentIndex: idx }, now);
+    });
+  };
 
-  const groupedCases = useMemo(() => {
-    return {
-      pedo1: meetingState.cases.filter((item) => item.type !== 'pedo2'),
-      pedo2: meetingState.cases.filter((item) => item.type === 'pedo2')
-    };
-  }, [meetingState.cases]);
+  const addSituation = () => {
+    const now = Date.now();
+    setTimerState((prev) => {
+      const newId = Math.max(0, ...prev.situations.map((s) => s.id)) + 1;
+      const nextSituations = [
+        ...prev.situations,
+        { id: newId, name: `Situation ${newId}`, color: COLORS[(newId - 1) % COLORS.length] }
+      ];
+      return syncPlan({ ...prev, situations: nextSituations }, now);
+    });
+  };
 
-  const synthesisData = useMemo(() => {
-    const completedCases = meetingState.cases.filter((item) => item.completed);
-    const totalCompleted = completedCases.length;
-    const onTime = completedCases.filter((item) => (item.remainingAtCompletion ?? 0) >= 0).length;
-    const overTime = completedCases.filter((item) => (item.remainingAtCompletion ?? 0) < 0).length;
-    const noData = Math.max(totalCompleted - onTime - overTime, 0);
-    const ratio = (count) => (totalCompleted ? (count / totalCompleted) * 100 : 0);
+  const removeSituation = (id) => {
+    const now = Date.now();
+    setTimerState((prev) => {
+      if (prev.situations.length <= 1) return prev;
+      const idx = prev.situations.findIndex((s) => s.id === id);
+      if (idx < 0) return prev;
+      const nextSituations = prev.situations.filter((s) => s.id !== id);
+      let nextIndex = prev.currentIndex;
+      if (nextIndex >= nextSituations.length) nextIndex = nextSituations.length - 1;
+      if (idx < nextIndex) nextIndex = Math.max(0, nextIndex - 1);
+      return syncPlan(
+        {
+          ...prev,
+          situations: nextSituations,
+          currentIndex: nextIndex,
+          plan: new Array(nextSituations.length)
+            .fill(null)
+            .map(() => ({ plannedStart: null, plannedEnd: null }))
+        },
+        now
+      );
+    });
+  };
 
-    const segments = [
-      {
-        key: 'on-time',
-        label: 'Temps respecté',
-        description: 'Cas terminés dans le temps prévu (aucun dépassement).',
-        count: onTime,
-        color: '#22c55e',
-        soft: '#ecfdf5'
-      },
-      {
-        key: 'over-time',
-        label: 'Dépassement',
-        description: 'Cas qui ont dépassé le temps alloué.',
-        count: overTime,
-        color: '#f97316',
-        soft: '#fff7ed'
-      },
-      {
-        key: 'no-data',
-        label: 'Sans donnée',
-        description: 'Cas clôturés sans chrono enregistré.',
-        count: noData,
-        color: '#94a3b8',
-        soft: '#f1f5f9'
-      }
-    ];
+  const updateSituationName = (id, value) => {
+    setTimerState((prev) => ({
+      ...prev,
+      situations: prev.situations.map((s) => (s.id === id ? { ...s, name: value } : s))
+    }));
+  };
 
-    const percentages = segments.map((segment) => ratio(segment.count));
-    const stops = percentages.reduce((acc, percent) => {
-      const total = acc.total + percent;
-      acc.values.push(total);
-      acc.total = total;
-      return acc;
-    }, { total: 0, values: [] });
+  const activeSlice = useMemo(() => {
+    if (!timerState.isConfigured || timerState.situations.length === 0) return null;
+    return timerState.situations[timerState.currentIndex] ?? null;
+  }, [timerState]);
 
-    const gradient = segments
-      .map((segment, index) => {
-        const start = index === 0 ? 0 : stops.values[index - 1];
-        const end = stops.values[index];
-        return `${segment.color} ${start}% ${end}%`;
-      })
-      .join(', ');
+  const activeStatus = useMemo(() => {
+    if (!timerState.isConfigured || !activeSlice) return null;
+    return getSliceStatus(timerState, timerState.currentIndex, wallNow);
+  }, [timerState, wallNow, activeSlice]);
 
-    return {
-      totalCompleted,
-      segments,
-      percentages,
-      gradient: totalCompleted ? `conic-gradient(${gradient})` : 'conic-gradient(#e2e8f0 0 100%)'
-    };
-  }, [meetingState.cases]);
+  const plannedEnd = useMemo(() => {
+    const p = timerState.plan[timerState.currentIndex];
+    return p?.plannedEnd ?? null;
+  }, [timerState]);
+
+  const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
+  const totalRemainingMs = timerState.isConfigured ? getTotalRemainingMs(timerState, wallNow) : 0;
+  const totalDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const totalDeltaLabel =
+    totalDeltaMs > 0
+      ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
+      : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
+  const totalDeltaTone = totalDeltaMs > 0 ? 'red' : totalDeltaMs < 0 ? 'blue' : 'gray';
+  const overtimeMs =
+    !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
+
+  const renderPie = () => {
+    if (!timerState.situations.length) return null;
+
+    const idx = timerState.currentIndex;
+    const remainingCount = timerState.situations.length - idx;
+
+    const size = 250;
+    const cx = size / 2;
+    const cy = size / 2;
+    const r = size / 2 - 10;
+
+    let angle = -90;
+
+    const parts = timerState.situations.slice(idx).map((s, offset) => {
+      const a = remainingCount > 0 ? 360 / remainingCount : 0;
+      const a1 = angle;
+      const a2 = angle + a;
+
+      const x1 = cx + r * Math.cos((a1 * Math.PI) / 180);
+      const y1 = cy + r * Math.sin((a1 * Math.PI) / 180);
+      const x2 = cx + r * Math.cos((a2 * Math.PI) / 180);
+      const y2 = cy + r * Math.sin((a2 * Math.PI) / 180);
+
+      const largeArc = a > 180 ? 1 : 0;
+      const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+      const status = getSliceStatus(timerState, idx + offset, wallNow);
+      const opacity = status.isPast ? 0.25 : status.isActive ? 1 : 0.75;
+
+      angle = a2;
+
+      return (
+        <g key={s.id}>
+          <path d={d} fill={s.color} opacity={opacity} stroke="#fff" strokeWidth="3" />
+          {status.isActive && <path d={d} fill="none" stroke="#fff" strokeWidth="6" opacity="0.9" />}
+        </g>
+      );
+    });
+
+    const innerR = r * 0.52;
+
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {parts}
+        <circle cx={cx} cy={cy} r={innerR} fill="#fff" />
+        <text
+          x={cx}
+          y={cy - 10}
+          textAnchor="middle"
+          fontSize="20"
+          fontWeight="900"
+          fill="#0f172a"
+          fontFamily="ui-monospace, Menlo, Consolas, monospace"
+        >
+          {formatClock(wallNow)}
+        </text>
+        <text
+          x={cx}
+          y={cy + 14}
+          textAnchor="middle"
+          fontSize="11"
+          fontWeight="900"
+          fill="#64748b"
+          fontFamily="ui-sans-serif, system-ui"
+        >
+          {timerState.isPaused ? '⏸ PAUSE' : 'EN COURS'}
+        </text>
+      </svg>
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-[#fcfdfe] text-slate-900 p-4 md:p-8 font-sans">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
-          <button
-            type="button"
-            onClick={() => setShowTutorial(true)}
-            className="absolute top-4 right-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-indigo-500 transition-all bg-slate-50 px-3 py-2 rounded-full border border-slate-100"
-          >
-            tuto
-          </button>
-          <div className="flex items-center gap-4">
-            <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-indigo-100 shadow-xl">
-              <Clock size={28} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-slate-800">TIMER MICADO</h1>
-              <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">
-                Pédopsychiatrie • Session Clinique
-              </p>
-            </div>
+    <div className="wrap">
+      <div className="topbar">
+        <div>
+          <h1>Timer MICADO</h1>
+          <div className="sub">Version robuste : fin fixe, pause = compression, recalcul propre</div>
+        </div>
+        <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
+          🗑️ Nouvelle session
+        </button>
+      </div>
+
+      {timerState.isConfigured && (
+        <div className="dashboard">
+          <div className="stat-card">
+            <div className="stat-label">Temps global restant</div>
+            <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
           </div>
-          <div className="text-left md:text-right">
-            <div className="text-[10px] font-black text-slate-300 uppercase tracking-wider mb-1">Total restant</div>
-            <div
-              className={`text-3xl font-mono font-bold ${
-                meetingState.totalSecondsLeft < 300 ? 'text-rose-500' : 'text-slate-700'
-              }`}
-            >
-              {formatTime(meetingState.totalSecondsLeft)}
-            </div>
-            <div className="text-[10px] font-black text-slate-300 uppercase tracking-wider mt-3">Heure actuelle</div>
-            <div className="text-xl font-mono font-bold text-slate-500">{currentTime}</div>
+          <div className="stat-card">
+            <div className="stat-label">Avance / retard cumulée</div>
+            <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
           </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 gap-6">
-          <div className="bg-white rounded-[2.5rem] p-10 md:p-12 border border-slate-100 shadow-sm text-center relative overflow-hidden">
-            {meetingState.activeIndex === COMPLETED_INDEX ? (
-              <div className="py-10 animate-in fade-in duration-700">
-                <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle2 size={40} className="text-green-500" />
+      {!timerState.isConfigured ? (
+        <div id="configView" className="card">
+          <div className="col" style={{ gap: '12px' }}>
+            <div className="pill">
+              <span
+                className="muted"
+                style={{ fontSize: '12px', letterSpacing: '.08em', textTransform: 'uppercase' }}
+              >
+                Heure actuelle
+              </span>
+              <span id="nowClock" className="mono" style={{ fontSize: '18px' }}>
+                {formatClock(wallNow)}
+              </span>
+            </div>
+
+            <div className="grid" style={{ gridTemplateColumns: '1fr', gap: '12px' }}>
+              <div className="col">
+                <label>Nombre de situations</label>
+                <input
+                  id="inpNb"
+                  type="number"
+                  min="1"
+                  max="25"
+                  value={configValues.nb}
+                  onChange={(event) =>
+                    setConfigValues((prev) => ({ ...prev, nb: event.target.value }))
+                  }
+                />
+              </div>
+              <div className="col">
+                <label>Durée pause (min) (option)</label>
+                <input
+                  id="inpPauseMin"
+                  type="number"
+                  min="0"
+                  max="240"
+                  value={configValues.pauseMin}
+                  onChange={(event) =>
+                    setConfigValues((prev) => ({ ...prev, pauseMin: event.target.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="col">
+                <label>Heure fin</label>
+                <input
+                  id="inpEnd"
+                  type="time"
+                  value={configValues.end}
+                  onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
+                />
+              </div>
+            </div>
+
+            <button type="button" className="btn-primary" onClick={handleLaunch}>
+              🚀 Lancer
+            </button>
+
+            <div className="sub">
+              Règles : l’heure de fin est fixe. La pause n’allonge pas la réunion : elle compresse les
+              situations restantes.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div id="runView" className="grid">
+          <div className="card">
+            <div className="row-between">
+              <div className="pill">
+                <span id="runClock" className="mono" style={{ fontSize: '18px' }}>
+                  {formatClock(wallNow)}
+                </span>
+                <span
+                  id="runState"
+                  className={`badge ${isFinished ? 'red' : timerState.isPaused ? 'blue' : 'gray'}`}
+                >
+                  {isFinished ? 'TERMINÉ' : timerState.isPaused ? 'PAUSE' : 'EN COURS'}
+                </span>
+              </div>
+              <div className="col" style={{ gap: '6px', alignItems: 'flex-end' }}>
+                <div className="badge gray">
+                  Fin : <span id="endLabel" className="mono">{formatHHMM(timerState.endAt)}</span>
                 </div>
-                <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tight">Staff complété !</h2>
-                <p className="text-slate-500 mb-10 max-w-md mx-auto text-lg">
-                  Toutes les situations cliniques ont été discutées. Exportez le compte-rendu pour votre synthèse.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button
-                    onClick={exportToExcel}
-                    className="inline-flex items-center justify-center gap-2 bg-indigo-600 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
-                  >
-                    <Download size={20} /> Exporter le board Excel
-                  </button>
-                  <button
-                    onClick={() => setShowConfig(true)}
-                    className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-600 px-8 py-4 rounded-2xl font-bold hover:bg-slate-200 transition-all"
-                  >
-                    <Settings size={20} /> Nouvelle session
-                  </button>
-                </div>
-                <div className="mt-12 grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-8 text-left">
-                  <div className="flex flex-col items-center gap-4">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em]">
-                      Synthèse chrono
-                    </div>
-                    <div
-                      className="w-52 h-52 rounded-full shadow-inner border border-slate-100 flex items-center justify-center"
-                      style={{ background: synthesisData.gradient }}
-                    >
-                      <div className="w-32 h-32 bg-white rounded-full border border-slate-100 flex flex-col items-center justify-center text-center">
-                        <div className="text-xs font-black text-slate-400 uppercase tracking-widest">Cas traités</div>
-                        <div className="text-3xl font-black text-slate-800">
-                          {synthesisData.totalCompleted}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-xs font-semibold text-slate-400">
-                      Répartition basée sur les temps enregistrés.
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-black text-slate-800">Lecture ultra pédagogique</h3>
-                    <p className="text-slate-500 text-sm">
-                      Chaque couleur représente une manière dont le temps a été consommé pendant le staff.
-                      Servez-vous de cette synthèse pour ajuster la prochaine séance (réduire, maintenir ou
-                      rééquilibrer les durées).
-                    </p>
-                    <div className="grid gap-4">
-                      {synthesisData.segments.map((segment, index) => (
-                        <div
-                          key={segment.key}
-                          className="flex flex-col sm:flex-row sm:items-center gap-3 bg-slate-50/70 border border-slate-100 rounded-2xl p-4"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span
-                              className="w-4 h-4 rounded-full"
-                              style={{ backgroundColor: segment.color }}
-                            ></span>
-                            <div className="font-bold text-slate-700">{segment.label}</div>
-                          </div>
-                          <div className="text-xs text-slate-500 flex-1">{segment.description}</div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-                            <span className="px-2 py-1 rounded-full" style={{ backgroundColor: segment.soft }}>
-                              {synthesisData.percentages[index]?.toFixed(0)}%
-                            </span>
-                            <span>{segment.count} cas</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="badge gray">
+                  Début : <span id="startLabel" className="mono">{formatHHMM(timerState.startAt)}</span>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="absolute top-8 left-8 flex items-center gap-2">
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full ${
-                      meetingState.isRunning ? 'bg-green-500 animate-pulse' : 'bg-slate-200'
-                    }`}
-                  ></div>
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                    {meetingState.isRunning ? 'Live monitoring' : 'Session en pause'}
+            </div>
+
+            <div className="hr"></div>
+
+            <div className="col" style={{ gap: '10px' }}>
+              <div className="active-line">
+                <div className="active-metric">
+                  <span className="active-label">Durée restante</span>
+                  <span className="active-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</span>
+                </div>
+                <div className="active-metric">
+                  <span className="active-label">Retard</span>
+                  <span className={`active-value ${overtimeMs > 0 ? 'red' : 'blue'}`}>
+                    {overtimeMs > 0 ? formatMMSS(overtimeMs) : '00:00'}
                   </span>
                 </div>
-
-                <div className="mb-6">
-                  <div className="h-10 flex items-center justify-center">
-                    <p
-                      className={`font-bold italic text-lg transition-colors duration-300 ${
-                        meetingState.currentCaseSecondsLeft < 0 ? 'text-rose-500' : 'text-indigo-500'
-                      }`}
-                    >
-                      {meetingState.currentCaseSecondsLeft < 0
-                        ? '⚠️ Temps dépassé ! Concluons...'
-                        : meetingState.currentCaseSecondsLeft < 60 && meetingState.activeIndex >= 0
-                          ? '⏳ Dernière minute !'
-                          : meetingState.activeIndex === -1
-                            ? 'Prêt pour le staff ?'
-                            : 'Discussion en cours'}
-                    </p>
-                  </div>
-                  <h2 className="text-5xl md:text-6xl font-black text-slate-800 tracking-tight mt-4">
-                    {meetingState.activeIndex >= 0
-                      ? meetingState.cases[meetingState.activeIndex]?.name
-                      : 'En attente'}
-                  </h2>
-                </div>
-
-                <div
-                  className={`text-[7rem] md:text-[9rem] font-mono font-black my-4 tracking-tighter leading-none transition-colors ${
-                    meetingState.currentCaseSecondsLeft < 0 ? 'text-rose-500' : 'text-slate-800'
-                  }`}
-                >
-                  {formatTime(meetingState.currentCaseSecondsLeft)}
-                </div>
-
-                <div className="flex flex-wrap justify-center gap-4 mt-12">
-                  {!meetingState.isRunning && (
-                    <button
-                      onClick={toggleTimer}
-                      className="flex items-center gap-3 px-10 md:px-12 py-5 rounded-[1.5rem] font-black text-lg md:text-xl transition-all shadow-xl bg-indigo-600 text-white shadow-indigo-50/50 hover:bg-indigo-700"
-                    >
-                      <Play size={28} /> {meetingState.activeIndex === -1 ? 'Démarrer' : 'Reprendre'}
-                    </button>
-                  )}
-
-                  {meetingState.activeIndex >= 0 && meetingState.activeIndex !== COMPLETED_INDEX && (
-                    <button
-                      onClick={() => handleNextCase()}
-                      className="flex items-center gap-3 bg-white text-slate-700 px-8 md:px-10 py-5 rounded-[1.5rem] font-black text-lg md:text-xl hover:bg-slate-50 transition-all border-2 border-slate-100 shadow-sm"
-                    >
-                      Suivant <SkipForward size={28} />
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => setShowConfig(true)}
-                    className="p-5 bg-slate-50 text-slate-400 rounded-[1.5rem] hover:text-slate-600 hover:bg-slate-100 transition-all border border-slate-100"
-                  >
-                    <Settings size={28} />
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <ClipboardList size={16} className="text-indigo-400" /> Ordre du jour
-                </h3>
-                <span className="text-[10px] font-bold text-slate-300">{meetingState.cases.length} patients</span>
               </div>
-              <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
-                {meetingState.cases.length === 0 && (
-                  <div className="text-center py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                    <p className="text-slate-400 text-sm font-medium">Aucune situation configurée</p>
-                  </div>
-                )}
-                {meetingState.cases.length > 0 && (
+              <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
+              <div className="row-between">
+                <div className="badge gray">
+                  Temps total restant :
+                  <span id="totalRemaining" className="mono">{formatMMSS(totalRemainingMs)}</span>
+                </div>
+                <div className="badge gray">
+                  Situations : <span id="nbLabel">{timerState.situations.length}</span>
+                </div>
+              </div>
+
+              <div
+                id="activeBox"
+                className="card"
+                style={{
+                  boxShadow: 'none',
+                  borderRadius: '18px',
+                  border: '2px solid var(--b)',
+                  padding: '12px',
+                  background: '#fafafa'
+                }}
+              >
+                {activeSlice && activeStatus ? (
                   <>
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-sky-500"></span>PEDO 1
-                      </span>
-                      <span>{groupedCases.pedo1.length}</span>
+                    <div className="row-between" style={{ gap: '10px' }}>
+                      <div className="row" style={{ gap: '10px' }}>
+                        <div className="dot" style={{ background: activeSlice.color }}></div>
+                        <div style={{ fontWeight: 1000 }}>{activeSlice.name}</div>
+                      </div>
+                      <div className="mono" style={{ fontWeight: 1000, color: activeSlice.color }}>
+                        {formatMMSS(activeStatus.remainingMs)}
+                      </div>
                     </div>
-                    {groupedCases.pedo1.map((item) => {
-                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
-                      return (
-                        <div
-                          key={item.id}
-                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
-                            meetingState.activeIndex === index
-                              ? 'bg-sky-50/60 border-sky-100'
-                              : 'bg-white border-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
-                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
-                              }`}
-                            >
-                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
-                            </div>
-                            <span
-                              className={`font-bold text-lg ${
-                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
-                              }`}
-                            >
-                              {item.name}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs font-mono font-bold text-slate-400">
-                              {Math.floor(item.plannedSeconds / 60)}m
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 pt-3">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>PEDO 2
+                    <div className="mini">
+                      <span>
+                        Fin prévue :
+                        <span className="mono">{plannedEnd ? formatClock(plannedEnd) : '--:--:--'}</span>
                       </span>
-                      <span>{groupedCases.pedo2.length}</span>
+                      <span>{activeStatus.progress.toFixed(0)}%</span>
                     </div>
-                    {groupedCases.pedo2.map((item) => {
-                      const index = meetingState.cases.findIndex((entry) => entry.id === item.id);
-                      return (
-                        <div
-                          key={item.id}
-                          className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${
-                            meetingState.activeIndex === index
-                              ? 'bg-emerald-50/60 border-emerald-100'
-                              : 'bg-white border-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-4">
-                            <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs ${
-                                item.completed ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'
-                              }`}
-                            >
-                              {item.completed ? <CheckCircle2 size={18} /> : `P${item.priority}`}
-                            </div>
-                            <span
-                              className={`font-bold text-lg ${
-                                item.completed ? 'text-slate-300 line-through' : 'text-slate-700'
-                              }`}
-                            >
-                              {item.name}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-xs font-mono font-bold text-slate-400">
-                              {Math.floor(item.plannedSeconds / 60)}m
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="bar">
+                      <div style={{ width: `${activeStatus.progress}%`, background: activeSlice.color }}></div>
+                    </div>
+                    {deltaInfo && (
+                      <div style={{ marginTop: '10px' }}>
+                        <span className={`badge ${deltaInfo.tone}`}>{deltaInfo.label}</span>
+                      </div>
+                    )}
+                    {overtimeMs > 0 && (
+                      <div style={{ marginTop: '10px' }}>
+                        <span className="badge red">Retard de {formatMMSS(overtimeMs)}</span>
+                      </div>
+                    )}
                   </>
+                ) : (
+                  <div className="muted">Aucune situation active.</div>
                 )}
+              </div>
+
+              <button type="button" className={timerState.isPaused ? 'btn-green' : 'btn-dark'} onClick={handlePauseToggle}>
+                {timerState.isPaused ? '▶️ REPRENDRE' : '⏸️ PAUSE'}
+              </button>
+
+              <div className="row" style={{ gap: '10px' }}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  style={{ flex: 1 }}
+                  onClick={() => jumpTo(timerState.currentIndex - 1)}
+                  disabled={timerState.currentIndex === 0}
+                >
+                  ◀︎ Précédent
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  style={{ flex: 1 }}
+                  onClick={() => jumpTo(timerState.currentIndex + 1)}
+                  disabled={timerState.currentIndex === timerState.situations.length - 1}
+                >
+                  Suivant ▶︎
+                </button>
+              </div>
+
+              <div className="sub">
+                Navigation : si tu forces une situation, on affiche avance/retard et on recalcule proprement
+                les durées restantes jusqu’à l’heure de fin.
+              </div>
+
+              <div className="hr"></div>
+
+              <div className="col">
+                <label>Camembert (parts restantes)</label>
+                <div id="pieWrap" style={{ display: 'flex', justifyContent: 'center' }}>{renderPie()}</div>
               </div>
             </div>
+          </div>
 
-            <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-                <BarChart3 size={16} className="text-indigo-400" /> Analyse en direct
-              </h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[#f8f9ff] p-5 rounded-2xl border border-indigo-50">
-                  <div className="text-[10px] font-black text-indigo-300 uppercase mb-1">Moyenne / situation</div>
-                  <div className="text-3xl font-black text-slate-800">
-                    {meetingState.cases.length
-                      ? Math.round((meetingState.duration - meetingState.breakTime) / meetingState.cases.length)
-                      : 0}
-                    <span className="text-sm font-bold text-slate-400 ml-1">min</span>
-                  </div>
-                </div>
-                <div className="bg-[#fff9f9] p-5 rounded-2xl border border-rose-50">
-                  <div className="text-[10px] font-black text-rose-300 uppercase mb-1">Pause prévue</div>
-                  <div className="text-3xl font-black text-slate-800">
-                    {meetingState.breakTime} <span className="text-sm font-bold text-slate-400 ml-1">min</span>
-                  </div>
-                </div>
-                <div className="bg-[#f8fff9] p-5 rounded-2xl border border-green-50 col-span-2">
-                  <div className="flex justify-between items-end mb-2">
-                    <div className="text-[10px] font-black text-green-400 uppercase">Progression staff</div>
-                    <div className="text-sm font-black text-green-600">{progressPercent}%</div>
-                  </div>
-                  <div className="w-full h-3 bg-white rounded-full overflow-hidden border border-green-50">
-                    <div
-                      className="h-full bg-green-500 transition-all duration-500"
-                      style={{ width: `${progressPercent}%` }}
-                    ></div>
-                  </div>
-                </div>
+          <div className="card">
+            <div className="row-between" style={{ marginBottom: '10px' }}>
+              <div className="row" style={{ gap: '10px' }}>
+                <span className="badge gray">📋 Liste</span>
+                <span className="badge gray">
+                  Actuel : <span id="idxLabel">{timerState.currentIndex + 1}/{timerState.situations.length}</span>
+                </span>
               </div>
+              <button type="button" className="btn-outline" onClick={addSituation}>+ Ajouter</button>
+            </div>
+
+            <div id="list" className="list">
+              {timerState.situations.map((sit, index) => {
+                const status = getSliceStatus(timerState, index, wallNow);
+                const klass = `item${index === timerState.currentIndex ? ' active' : ''}${status.isPast ? ' past' : ''}`;
+                const p2 = timerState.plan[index] || {};
+                const startT = p2.plannedStart ? formatClock(p2.plannedStart) : '--:--:--';
+                const endT = p2.plannedEnd ? formatClock(p2.plannedEnd) : '--:--:--';
+                const remaining = status.isPast ? 0 : status.remainingMs;
+
+                return (
+                  <div
+                    key={sit.id}
+                    className={klass}
+                    style={{
+                      background: `${sit.color}10`,
+                      borderColor: index === timerState.currentIndex ? sit.color : 'transparent'
+                    }}
+                  >
+                    <div className="row" style={{ gap: '10px' }}>
+                      <div className="dot" style={{ background: sit.color }}></div>
+                      <input
+                        data-name={sit.id}
+                        type="text"
+                        value={sit.name}
+                        style={{ flex: 1, color: sit.color }}
+                        onChange={(event) => updateSituationName(sit.id, event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn-outline"
+                        style={{ padding: '8px 10px', borderRadius: '12px', fontWeight: 1000 }}
+                        onClick={() => jumpTo(index)}
+                      >
+                        Aller
+                      </button>
+                      {timerState.situations.length > 1 && (
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '12px',
+                            fontWeight: 1000,
+                            color: '#e11d48',
+                            borderColor: '#fecaca'
+                          }}
+                          onClick={() => removeSituation(sit.id)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <div className="mini">
+                      <span className="mono">{startT} → {endT}</span>
+                      <span className="mono" style={{ fontWeight: 1000, color: sit.color }}>
+                        {formatMMSS(remaining)}
+                      </span>
+                    </div>
+                    <div className="bar">
+                      <div style={{ width: `${status.progress}%`, background: sit.color }}></div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
+      )}
 
-        {showConfig && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
-              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-                  <Settings className="text-indigo-600" size={28} /> Configuration
-                </h2>
-                <button
-                  onClick={() => setShowConfig(false)}
-                  className="bg-white text-slate-400 hover:text-rose-500 p-3 rounded-xl transition-all shadow-sm border border-slate-100"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Durée staff (min)
-                    </label>
-                    <input
-                      type="number"
-                      value={meetingState.duration}
-                      onChange={(event) => updateConfig({ duration: parseInt(event.target.value, 10) || 0 })}
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none font-bold text-xl transition-all"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                      Temps pause (min)
-                    </label>
-                    <input
-                      type="number"
-                      value={meetingState.breakTime}
-                      onChange={(event) => updateConfig({ breakTime: parseInt(event.target.value, 10) || 0 })}
-                      className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none font-bold text-xl transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block flex justify-between">
-                    <span>Import patients (1 par ligne)</span>
-                    <span className="text-indigo-500">Rapide</span>
-                  </label>
-                  <textarea
-                    value={bulkInput}
-                    onChange={(event) => setBulkInput(event.target.value)}
-                    placeholder="Nicolas\nInès\nThomas..."
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 focus:border-indigo-500 focus:bg-white outline-none h-40 font-medium text-lg transition-all"
-                  />
-                  <button
-                    onClick={handleBulkImport}
-                    className="w-full bg-slate-800 text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:bg-slate-700 transition-all shadow-lg"
-                  >
-                    <Plus size={20} /> Ajouter à la liste
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
-                    Situations à traiter &amp; priorités
-                  </label>
-                  <div className="space-y-3">
-                    {meetingState.cases.map((item, index) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-6 bg-slate-50 p-6 rounded-2xl border border-slate-100 transition-all hover:bg-white hover:shadow-md group"
-                      >
-                        <div className="flex-1">
-                          <div className="flex justify-between mb-3">
-                            <span className="font-black text-slate-800 text-lg uppercase tracking-tight">
-                              {item.name}
-                            </span>
-                            <span className="font-mono font-bold text-indigo-600">
-                              {Math.floor(item.plannedSeconds / 60)} min
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-[10px] font-black text-slate-400 w-20">
-                              Urgence P{item.priority}
-                            </span>
-                            <input
-                              type="range"
-                              min="1"
-                              max="5"
-                              value={item.priority}
-                              onChange={(event) => {
-                                const newCases = meetingState.cases.map((entry, entryIndex) =>
-                                  entryIndex === index
-                                    ? { ...entry, priority: parseInt(event.target.value, 10) }
-                                    : entry
-                                );
-                                updateConfig({ cases: newCases });
-                              }}
-                              className="flex-1 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
-                            />
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => requestDeletePatient(item.id)}
-                          className={`text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-xl transition-all ${
-                            confirmDeleteId === item.id
-                              ? 'bg-rose-500 text-white shadow-sm'
-                              : 'bg-slate-100 text-slate-400 hover:text-rose-500'
-                          }`}
-                        >
-                          {confirmDeleteId === item.id ? 'Confirmer' : 'Supprimer'}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-10 border-t border-slate-100">
-                  <button
-                    onClick={resetMeeting}
-                    className={`w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 ${
-                      confirmReset
-                        ? 'bg-rose-600 text-white shadow-rose-100'
-                        : 'bg-rose-50 text-rose-600 hover:bg-rose-100 shadow-sm'
-                    }`}
-                  >
-                    <AlertCircle size={22} />
-                    {confirmReset ? "Cliquez pour confirmer l'effacement" : 'Réinitialiser la session'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-8 bg-white border-t border-slate-50 flex gap-4">
-                <button
-                  onClick={() => setShowConfig(false)}
-                  className="flex-1 bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
-                >
-                  Démarrer le staff
-                </button>
-              </div>
-            </div>
+      <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
+        <div className="box">
+          <div style={{ fontWeight: 1000, fontSize: '18px', marginBottom: '6px' }}>Confirmer</div>
+          <div className="muted" style={{ marginBottom: '14px' }}>
+            Supprimer la session et repartir à zéro ?
           </div>
-        )}
-
-        {showTutorial && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200 my-auto">
-              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-                <div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                    Tutoriel rapide
-                  </div>
-                  <h2 className="text-2xl font-black text-slate-800">Comment utiliser le timer</h2>
-                </div>
-                <button
-                  onClick={() => setShowTutorial(false)}
-                  className="bg-white text-slate-400 hover:text-rose-500 p-3 rounded-xl transition-all shadow-sm border border-slate-100"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-10 space-y-6 text-slate-600 text-sm leading-relaxed">
-                <p>
-                  Ce timer est conçu pour rythmer votre staff MICADO : il répartit automatiquement le temps
-                  disponible entre chaque situation clinique selon la priorité choisie.
-                </p>
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <span className="text-indigo-500 font-black">1.</span>
-                    <div>
-                      <div className="font-bold text-slate-800">Configurez la séance</div>
-                      <p>
-                        Ouvrez les paramètres pour fixer la durée totale du staff et le temps de pause.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-indigo-500 font-black">2.</span>
-                    <div>
-                      <div className="font-bold text-slate-800">Ajoutez les situations</div>
-                      <p>
-                        Importez vos patients (1 nom par ligne) puis ajustez la priorité P1 à P5 : plus la
-                        priorité est élevée, plus le temps alloué est important.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-indigo-500 font-black">3.</span>
-                    <div>
-                      <div className="font-bold text-slate-800">Démarrez le chrono</div>
-                      <p>
-                        Cliquez sur « Démarrer » pour lancer le premier cas. Le compteur principal affiche le
-                        temps restant pour la situation en cours.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-indigo-500 font-black">4.</span>
-                    <div>
-                      <div className="font-bold text-slate-800">Passez au cas suivant</div>
-                      <p>
-                        Utilisez « Suivant » dès qu’un cas est conclu. Le timer passe automatiquement au
-                        dossier suivant et conserve l’écart de temps pour la synthèse.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <span className="text-indigo-500 font-black">5.</span>
-                    <div>
-                      <div className="font-bold text-slate-800">Clôturez et exportez</div>
-                      <p>
-                        Une fois la session terminée, consultez la synthèse pédagogique et exportez le tableau
-                        Excel pour l’archivage.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-8 bg-white border-t border-slate-50 flex gap-4">
-                <button
-                  onClick={() => setShowTutorial(false)}
-                  className="flex-1 bg-indigo-600 text-white py-5 rounded-[1.5rem] font-black text-xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all transform active:scale-[0.98]"
-                >
-                  Compris !
-                </button>
-              </div>
-            </div>
+          <div className="row" style={{ gap: '10px' }}>
+            <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setShowReset(false)}>
+              Annuler
+            </button>
+            <button type="button" className="btn-danger" style={{ flex: 1 }} onClick={handleReset}>
+              Supprimer
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
