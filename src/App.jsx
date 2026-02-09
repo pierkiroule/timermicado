@@ -179,6 +179,9 @@ const CompressionPie = ({
   const bubbleCount = 6 + Math.round(compression * 10);
   const bubbleScale = 1 + compression * 0.6;
   const bubbleDuration = 3.4 - compression * 1.2;
+  const haloCount = 10 + Math.round(compression * 10);
+  const haloScale = 1 + compression * 0.45;
+  const haloDuration = 6.4 - compression * 2.2;
   const bubbles = Array.from({ length: bubbleCount }, (_, i) => {
     const angle = (i / bubbleCount) * Math.PI * 2;
     const radius = 8 + (i % 6) * 4;
@@ -189,13 +192,25 @@ const CompressionPie = ({
       r: 1.4 + (i % 5) * 0.5
     };
   });
+  const haloBubbles = Array.from({ length: haloCount }, (_, i) => {
+    const angle = (i / haloCount) * Math.PI * 2;
+    const radius = 108 + (i % 4) * 2;
+    return {
+      id: `halo-${i}`,
+      cx: 120 + Math.cos(angle) * radius,
+      cy: 120 + Math.sin(angle) * radius,
+      r: 2 + (i % 6) * 0.5 + compression * 1.1
+    };
+  });
 
   return (
     <div
       className="compression-pie"
       style={{
         '--bubble-scale': bubbleScale,
-        '--bubble-duration': `${bubbleDuration}s`
+        '--bubble-duration': `${bubbleDuration}s`,
+        '--halo-scale': haloScale,
+        '--halo-duration': `${haloDuration}s`
       }}
     >
       <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
@@ -227,18 +242,15 @@ const CompressionPie = ({
         </defs>
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
         <g className="pie-halo" aria-hidden="true">
-          <circle className="pie-halo-bubble halo-1" cx="120" cy="8" r="3.2" />
-          <circle className="pie-halo-bubble halo-2" cx="168" cy="22" r="2.4" />
-          <circle className="pie-halo-bubble halo-3" cx="206" cy="62" r="2.8" />
-          <circle className="pie-halo-bubble halo-4" cx="216" cy="120" r="2.2" />
-          <circle className="pie-halo-bubble halo-5" cx="202" cy="176" r="2.6" />
-          <circle className="pie-halo-bubble halo-6" cx="170" cy="214" r="2.2" />
-          <circle className="pie-halo-bubble halo-7" cx="120" cy="232" r="3.1" />
-          <circle className="pie-halo-bubble halo-8" cx="70" cy="214" r="2.4" />
-          <circle className="pie-halo-bubble halo-9" cx="36" cy="176" r="2.8" />
-          <circle className="pie-halo-bubble halo-10" cx="26" cy="120" r="2.2" />
-          <circle className="pie-halo-bubble halo-11" cx="40" cy="62" r="2.6" />
-          <circle className="pie-halo-bubble halo-12" cx="72" cy="22" r="2.4" />
+          {haloBubbles.map((bubble, index) => (
+            <circle
+              key={bubble.id}
+              className={`pie-halo-bubble halo-${(index % 12) + 1}`}
+              cx={bubble.cx}
+              cy={bubble.cy}
+              r={bubble.r}
+            />
+          ))}
         </g>
         {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
