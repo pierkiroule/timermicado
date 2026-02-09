@@ -177,7 +177,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
   transform-origin:center;
   animation:
     halo-float var(--halo-duration, 5.6s) ease-in-out infinite,
-    halo-spin calc(var(--halo-duration, 5.6s) * 2.1) linear infinite;
+    halo-spin calc(var(--halo-duration, 5.6s) * 2.1) linear infinite,
+    halo-evaporate calc(var(--halo-duration, 5.6s) * 1.35) ease-in-out infinite;
+  animation-delay: var(--halo-delay, 0s);
 }
 .pie-halo-bubble.halo-2{animation-delay:.6s;opacity:.75}
 .pie-halo-bubble.halo-3{animation-delay:1.2s;opacity:.78}
@@ -200,6 +202,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 @keyframes halo-spin{
   0%{transform:translate(0,0) scale(calc(.85 * var(--halo-scale, 1))) rotate(0deg)}
   100%{transform:translate(0,0) scale(calc(.85 * var(--halo-scale, 1))) rotate(360deg)}
+}
+
+@keyframes halo-evaporate{
+  0%{opacity:.9;filter:blur(0px)}
+  40%{opacity:.7}
+  70%{opacity:.45;transform:translate(var(--halo-drift, 0px), -16px) scale(calc(1.15 * var(--halo-scale, 1)))}
+  100%{opacity:0;filter:blur(1.2px);transform:translate(var(--halo-drift, 0px), -24px) scale(calc(1.25 * var(--halo-scale, 1)))}
 }
 
 @media(min-width:700px){

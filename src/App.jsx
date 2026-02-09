@@ -195,11 +195,14 @@ const CompressionPie = ({
   const haloBubbles = Array.from({ length: haloCount }, (_, i) => {
     const angle = (i / haloCount) * Math.PI * 2;
     const radius = 108 + (i % 4) * 2;
+    const drift = ((i % 6) - 2.5) * 1.6;
     return {
       id: `halo-${i}`,
       cx: 120 + Math.cos(angle) * radius,
       cy: 120 + Math.sin(angle) * radius,
-      r: 2 + (i % 6) * 0.5 + compression * 1.1
+      r: 2 + (i % 6) * 0.5 + compression * 1.1,
+      drift,
+      delay: (i % 12) * 0.4
     };
   });
 
@@ -249,6 +252,7 @@ const CompressionPie = ({
               cx={bubble.cx}
               cy={bubble.cy}
               r={bubble.r}
+              style={{ '--halo-delay': `${bubble.delay}s`, '--halo-drift': `${bubble.drift}px` }}
             />
           ))}
         </g>
