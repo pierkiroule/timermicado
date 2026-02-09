@@ -11,8 +11,9 @@ body{
   color:var(--txt);
 }
 #root{min-height:100vh}
-.wrap{max-width:1100px;margin:0 auto;padding:18px}
-.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.topbar{display:flex;flex-direction:column;align-items:flex-start;gap:12px;margin-bottom:16px}
+.topbar .btn-danger{width:100%}
 .hero-dashboard{margin-bottom:18px;display:flex;flex-direction:column;gap:12px}
 .mini-dashboard{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .mini-dashboard.secondary{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
@@ -26,7 +27,6 @@ body{
 .stat-value.gray{color:#334155}
 .current-time-label{font-size:12px;color:var(--muted);padding-left:4px}
 .grid{display:grid;gap:16px}
-@media(min-width:900px){ .grid{grid-template-columns: 420px 1fr} }
 .card{
   background:var(--card);
   border:1px solid var(--b);
@@ -37,7 +37,7 @@ body{
 h1{margin:0;font-size:28px;letter-spacing:-.02em}
 .sub{color:var(--muted);font-size:13px;margin-top:4px}
 .row{display:flex;gap:10px;align-items:center}
-.row-between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.row-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .col{display:flex;flex-direction:column;gap:8px}
 label{font-size:11px;color:var(--muted);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 input[type="time"], input[type="number"], input[type="text"]{
@@ -85,7 +85,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
 .muted{color:var(--muted)}
-.list{display:flex;flex-direction:column;gap:10px;max-height:520px;overflow:auto;padding-right:4px}
+.list{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow:auto;padding-right:4px}
 .item{
   border:2px solid transparent;
   border-radius:16px;
@@ -121,3 +121,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .modal.show{display:flex}
 .modal .box{max-width:420px;width:100%;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
 svg{display:block}
+
+@media(min-width:700px){
+  .topbar{flex-direction:row;align-items:center}
+  .topbar .btn-danger{width:auto}
+  .list{max-height:520px}
+}
+
+@media(min-width:900px){
+  .grid{grid-template-columns: 420px 1fr}
+}

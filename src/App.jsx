@@ -419,17 +419,21 @@ export default function App() {
 
   const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
   const totalRemainingMs = timerState.isConfigured ? getTotalRemainingMs(timerState, wallNow) : 0;
-  const totalDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const totalDeltaMs = timerState.isConfigured && timerState.endAt ? wallNow - timerState.endAt : 0;
   const totalDeltaLabel =
-    totalDeltaMs > 0
-      ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
-      : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
+    totalDeltaMs === 0
+      ? "À l'heure"
+      : totalDeltaMs > 0
+        ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
+        : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
   const totalDeltaTone = totalDeltaMs > 0 ? 'red' : totalDeltaMs < 0 ? 'blue' : 'gray';
   const currentDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
   const currentDeltaLabel =
-    currentDeltaMs > 0
-      ? `Retard de ${formatDeltaMMSS(currentDeltaMs)}`
-      : `Avance de ${formatDeltaMMSS(currentDeltaMs)}`;
+    currentDeltaMs === 0
+      ? "À l'heure"
+      : currentDeltaMs > 0
+        ? `Retard de ${formatDeltaMMSS(currentDeltaMs)}`
+        : `Avance de ${formatDeltaMMSS(currentDeltaMs)}`;
   const currentDeltaTone = currentDeltaMs > 0 ? 'red' : currentDeltaMs < 0 ? 'blue' : 'gray';
   const overtimeMs =
     !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
