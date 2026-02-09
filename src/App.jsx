@@ -51,6 +51,18 @@ const buildInitialSituations = (n) =>
     state: 'ACTIVE'
   }));
 
+const normalizeState = (data) => {
+  const initialCount =
+    typeof data.initialCount === 'number' && data.initialCount > 0
+      ? data.initialCount
+      : data.situations.length || 1;
+
+  return {
+    ...data,
+    initialCount
+  };
+};
+
 const loadState = () => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -59,7 +71,8 @@ const loadState = () => {
         isConfigured: false,
         situations: [],
         startAt: null,
-        endAt: null
+        endAt: null,
+        initialCount: null
       };
     }
 
@@ -69,18 +82,20 @@ const loadState = () => {
         isConfigured: false,
         situations: [],
         startAt: null,
-        endAt: null
+        endAt: null,
+        initialCount: null
       };
     }
 
-    return data;
+    return normalizeState(data);
   } catch (error) {
     console.warn('Impossible de charger la session.', error);
     return {
       isConfigured: false,
       situations: [],
       startAt: null,
-      endAt: null
+      endAt: null,
+      initialCount: null
     };
   }
 };
@@ -124,7 +139,8 @@ export default function App() {
       isConfigured: true,
       situations: buildInitialSituations(n),
       startAt: now,
-      endAt
+      endAt,
+      initialCount: n
     });
   };
 
@@ -134,7 +150,8 @@ export default function App() {
       isConfigured: false,
       situations: [],
       startAt: null,
-      endAt: null
+      endAt: null,
+      initialCount: null
     });
     setShowReset(false);
   };
@@ -189,6 +206,13 @@ export default function App() {
 
   const timePerActive = activeCount > 0 ? remainingGlobalMs / activeCount : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const initialCount = timerState.isConfigured
+    ? Math.max(1, timerState.initialCount || timerState.situations.length || 1)
+    : 1;
+  const initialPerSituationMs = totalDurationMs / initialCount;
+  const scoreMs = timePerActive - initialPerSituationMs;
+  const scoreLabel = scoreMs >= 0 ? 'Avance' : 'Retard';
+  const scoreBadge = scoreMs >= 0 ? 'blue' : 'red';
 
   return (
     <div className="wrap">
@@ -224,6 +248,12 @@ export default function App() {
             <div className="stat-card flat">
               <div className="stat-label">Temps par situation active</div>
               <div className="stat-value mono">{formatMMSS(timePerActive)}</div>
+            </div>
+            <div className="stat-card flat">
+              <div className="stat-label">Écart vs temps initial</div>
+              <div className={`stat-value ${scoreBadge}`}>
+                {scoreLabel} {scoreMs >= 0 ? '+' : '-'}{formatMMSS(Math.abs(scoreMs))}
+              </div>
             </div>
           </div>
         </div>
