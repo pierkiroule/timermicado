@@ -43,6 +43,14 @@ const formatMMSS = (ms) => {
   return `${mm}:${ss}`;
 };
 
+const tempoColor = (score) => {
+  if (score >= 0.25) return '#3b82f6';
+  if (score >= 0.1) return '#22c55e';
+  if (score > -0.1) return '#eab308';
+  if (score > -0.25) return '#f97316';
+  return '#ef4444';
+};
+
 const buildInitialSituations = (n) =>
   Array.from({ length: n }, (_, i) => ({
     id: i + 1,
@@ -109,6 +117,7 @@ export default function App() {
     end: ''
   });
   const tickRef = useRef(null);
+  const initialAvgRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -131,6 +140,7 @@ export default function App() {
 
     if (!configValues.end) return;
 
+    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -153,6 +163,7 @@ export default function App() {
       endAt: null,
       initialCount: null
     });
+    initialAvgRef.current = null;
     setShowReset(false);
   };
 
@@ -198,6 +209,23 @@ export default function App() {
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const remainingRatio = clamp(remainingGlobalMs / totalDurationMs, 0, 1);
   const remainingPct = remainingRatio * 100;
+  const remainingCount = timerState.situations.length;
+  const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
+  const tempoScore = initialAvgRef.current
+    ? (avgNowMs - initialAvgRef.current) / initialAvgRef.current
+    : 0;
+
+  useEffect(() => {
+    if (
+      !initialAvgRef.current &&
+      timerState.startAt &&
+      timerState.endAt &&
+      timerState.situations.length > 0
+    ) {
+      const totalInitialMs = timerState.endAt - timerState.startAt;
+      initialAvgRef.current = totalInitialMs / timerState.situations.length;
+    }
+  }, [timerState.startAt, timerState.endAt, timerState.situations.length]);
 
   const activeCount = useMemo(
     () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
@@ -248,6 +276,20 @@ export default function App() {
             <div className="stat-card flat">
               <div className="stat-label">Temps par situation active</div>
               <div className="stat-value mono">{formatMMSS(timePerActive)}</div>
+            </div>
+            <div className="stat-card flat">
+              <div className="stat-label">Tempo moyen</div>
+              <div className="stat-value">
+                <div
+                  style={{
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    backgroundColor: tempoColor(tempoScore)
+                  }}
+                  title={`Tempo ${(tempoScore * 100).toFixed(0)}%`}
+                />
+              </div>
             </div>
             <div className="stat-card flat">
               <div className="stat-label">Écart vs temps initial</div>
