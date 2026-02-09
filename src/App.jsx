@@ -168,8 +168,8 @@ const getSliceStatus = (state, index, wallNow) => {
   const duration = Math.max(0, p.plannedEnd - p.plannedStart);
   const progressNow = getProgressNow(state, wallNow);
   const remaining = Math.max(0, p.plannedEnd - progressNow);
-  const isPast = wallNow >= p.plannedEnd;
-  const isFuture = wallNow < p.plannedStart;
+  const isPast = progressNow >= p.plannedEnd;
+  const isFuture = progressNow < p.plannedStart;
   const isActive = !isPast && !isFuture;
 
   let prog = 0;
