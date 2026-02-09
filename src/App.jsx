@@ -176,11 +176,58 @@ const CompressionPie = ({
 
   const hatchedPath =
     hatchedAngle > 0 ? describeArc(120, 120, 100, -90, -90 + hatchedAngle) : null;
+  const bubbleCount = 6 + Math.round(compression * 10);
+  const bubbleScale = 1 + compression * 0.6;
+  const bubbleDuration = 3.4 - compression * 1.2;
+  const haloCount = 10 + Math.round(compression * 10);
+  const haloScale = 1 + compression * 0.45;
+  const haloDuration = 6.4 - compression * 2.2;
+  const bubbles = Array.from({ length: bubbleCount }, (_, i) => {
+    const angle = (i / bubbleCount) * Math.PI * 2;
+    const radius = 8 + (i % 6) * 4;
+    return {
+      id: `bubble-${i}`,
+      cx: 120 + Math.cos(angle) * radius,
+      cy: 120 + Math.sin(angle) * radius,
+      r: 1.4 + (i % 5) * 0.5
+    };
+  });
+  const haloBubbles = Array.from({ length: haloCount }, (_, i) => {
+    const angle = (i / haloCount) * Math.PI * 2;
+    const radius = 108 + (i % 4) * 2;
+    const drift = ((i % 6) - 2.5) * 1.6;
+    return {
+      id: `halo-${i}`,
+      cx: 120 + Math.cos(angle) * radius,
+      cy: 120 + Math.sin(angle) * radius,
+      r: 2 + (i % 6) * 0.5 + compression * 1.1,
+      drift,
+      delay: (i % 12) * 0.4
+    };
+  });
 
   return (
-    <div className="compression-pie">
+    <div
+      className="compression-pie"
+      style={{
+        '--bubble-scale': bubbleScale,
+        '--bubble-duration': `${bubbleDuration}s`,
+        '--halo-scale': haloScale,
+        '--halo-duration': `${haloDuration}s`
+      }}
+    >
       <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
         <defs>
+          <radialGradient id="bubble-gradient" cx="30%" cy="30%" r="70%">
+            <stop offset="0%" stopColor="#e0f2fe" stopOpacity="0.95" />
+            <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0.3" />
+          </radialGradient>
+          <radialGradient id="halo-gradient" cx="50%" cy="50%" r="60%">
+            <stop offset="0%" stopColor="#e0f2fe" stopOpacity="0.9" />
+            <stop offset="60%" stopColor="#7dd3fc" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.2" />
+          </radialGradient>
           <pattern
             id="compression-bubbles"
             width="24"
@@ -198,18 +245,16 @@ const CompressionPie = ({
         </defs>
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
         <g className="pie-halo" aria-hidden="true">
-          <circle className="pie-halo-bubble halo-1" cx="120" cy="8" r="3.2" />
-          <circle className="pie-halo-bubble halo-2" cx="168" cy="22" r="2.4" />
-          <circle className="pie-halo-bubble halo-3" cx="206" cy="62" r="2.8" />
-          <circle className="pie-halo-bubble halo-4" cx="216" cy="120" r="2.2" />
-          <circle className="pie-halo-bubble halo-5" cx="202" cy="176" r="2.6" />
-          <circle className="pie-halo-bubble halo-6" cx="170" cy="214" r="2.2" />
-          <circle className="pie-halo-bubble halo-7" cx="120" cy="232" r="3.1" />
-          <circle className="pie-halo-bubble halo-8" cx="70" cy="214" r="2.4" />
-          <circle className="pie-halo-bubble halo-9" cx="36" cy="176" r="2.8" />
-          <circle className="pie-halo-bubble halo-10" cx="26" cy="120" r="2.2" />
-          <circle className="pie-halo-bubble halo-11" cx="40" cy="62" r="2.6" />
-          <circle className="pie-halo-bubble halo-12" cx="72" cy="22" r="2.4" />
+          {haloBubbles.map((bubble, index) => (
+            <circle
+              key={bubble.id}
+              className={`pie-halo-bubble halo-${(index % 12) + 1}`}
+              cx={bubble.cx}
+              cy={bubble.cy}
+              r={bubble.r}
+              style={{ '--halo-delay': `${bubble.delay}s`, '--halo-drift': `${bubble.drift}px` }}
+            />
+          ))}
         </g>
         {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
@@ -217,11 +262,15 @@ const CompressionPie = ({
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
         <g className="pie-bubbles" aria-hidden="true">
-          <circle className="pie-bubble bubble-1" cx="120" cy="120" r="2.6" />
-          <circle className="pie-bubble bubble-2" cx="126" cy="118" r="2.1" />
-          <circle className="pie-bubble bubble-3" cx="114" cy="122" r="1.8" />
-          <circle className="pie-bubble bubble-4" cx="132" cy="124" r="1.6" />
-          <circle className="pie-bubble bubble-5" cx="108" cy="118" r="1.4" />
+          {bubbles.map((bubble, index) => (
+            <circle
+              key={bubble.id}
+              className={`pie-bubble bubble-${(index % 5) + 1}`}
+              cx={bubble.cx}
+              cy={bubble.cy}
+              r={bubble.r}
+            />
+          ))}
         </g>
         <text x="120" y="110" textAnchor="middle" className="pie-emoji">
           {pressureEmoji}
@@ -359,6 +408,27 @@ export default function App() {
     <div className="wrap">
       <div className="topbar">
         <div className="title-block">
+          <div className="logo">
+            <svg viewBox="0 0 220 60" role="img" aria-label="Micado Timer">
+              <defs>
+                <linearGradient id="logo-glow" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stopColor="#38bdf8" />
+                  <stop offset="50%" stopColor="#818cf8" />
+                  <stop offset="100%" stopColor="#ec4899" />
+                </linearGradient>
+              </defs>
+              <g fill="none" stroke="url(#logo-glow)" strokeWidth="2.5">
+                <path d="M20 30c0-11 9-20 20-20s20 9 20 20-9 20-20 20-20-9-20-20Z" />
+                <path d="M20 30c10 8 30 8 40 0" />
+              </g>
+              <circle cx="40" cy="20" r="4" fill="#e0f2fe" />
+              <circle cx="55" cy="30" r="3" fill="#7dd3fc" />
+              <circle cx="44" cy="42" r="2.5" fill="#f0abfc" />
+              <text x="78" y="38" fill="#f8fafc" fontSize="24" fontWeight="700" fontFamily="inherit">
+                Micado•°Timer
+              </text>
+            </svg>
+          </div>
           <h1>MicadoTimer</h1>
           <div className="sub">
             1) CADRER Fixons l’heure de fin et le nombre de tâches.
