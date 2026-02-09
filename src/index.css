@@ -72,6 +72,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .btn-outline{
   background:#fff;border:2px solid var(--b);color:var(--txt)
 }
+.btn-outline.danger{
+  border-color:#fecaca;color:#e11d48
+}
 .btn-danger{
   background:#fff;border:2px solid #fecaca;color:#e11d48
 }
@@ -92,18 +95,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   background: rgba(0,0,0,.02);
   transition: all .15s ease;
 }
-.item.active{transform:scale(1.02); box-shadow:0 10px 25px rgba(2,6,23,.08)}
-.item.past{opacity:.42}
 .dot{width:12px;height:12px;border-radius:999px;flex:0 0 auto}
-.mini{
-  font-size:12px;font-weight:800;color:var(--muted);
-  display:flex;justify-content:space-between;gap:10px;margin-top:8px
-}
-.bar{
-  height:8px;border-radius:999px;background: rgba(255,255,255,.55);
-  overflow:hidden;margin-top:10px
-}
-.bar > div{height:100%}
 .hr{height:1px;background:var(--b);margin:10px 0}
 .badge{
   display:inline-flex;align-items:center;gap:6px;
@@ -119,7 +111,38 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 .modal.show{display:flex}
 .modal .box{max-width:420px;width:100%;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
-svg{display:block}
+
+.mikado-stack{display:flex;flex-direction:column;gap:16px}
+.mikado-row{display:grid;grid-template-columns:72px 1fr;gap:16px;align-items:stretch}
+.mikado-stick{
+  height:180px;
+  border-radius:16px;
+  border:1px solid var(--b);
+  background:#fff;
+  padding:8px;
+  display:flex;
+  align-items:flex-end;
+  box-shadow:var(--flat-shadow);
+}
+.mikado-stick-fill{
+  width:100%;
+  border-radius:12px;
+  transition:height .2s ease;
+}
+.mikado-stick-fill.muted{
+  opacity:.4;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255,255,255,.4) 0px,
+    rgba(255,255,255,.4) 6px,
+    rgba(255,255,255,.65) 6px,
+    rgba(255,255,255,.65) 12px
+  );
+}
+.mikado-info{display:flex;flex-direction:column;gap:10px}
+.mikado-title{display:flex;gap:10px;align-items:center}
+.mikado-title input{flex:1}
+.mikado-meta-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
