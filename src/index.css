@@ -25,7 +25,6 @@ body{
 .stat-value.red{color:#dc2626}
 .stat-value.blue{color:#2563eb}
 .stat-value.gray{color:#334155}
-.current-time-label{font-size:12px;color:var(--muted);padding-left:4px}
 .grid{display:grid;gap:16px}
 .card{
   background:var(--card);

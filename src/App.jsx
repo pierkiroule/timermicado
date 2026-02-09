@@ -484,18 +484,7 @@ export default function App() {
         <circle cx={cx} cy={cy} r={innerR} fill="#fff" />
         <text
           x={cx}
-          y={cy - 10}
-          textAnchor="middle"
-          fontSize="20"
-          fontWeight="900"
-          fill="#0f172a"
-          fontFamily="ui-monospace, Menlo, Consolas, monospace"
-        >
-          {formatClock(wallNow)}
-        </text>
-        <text
-          x={cx}
-          y={cy + 14}
+          y={cy + 4}
           textAnchor="middle"
           fontSize="11"
           fontWeight="900"
@@ -542,25 +531,12 @@ export default function App() {
               <div className={`stat-value ${currentDeltaTone}`}>{currentDeltaLabel}</div>
             </div>
           </div>
-          <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
         </div>
       )}
 
       {!timerState.isConfigured ? (
         <div id="configView" className="card">
           <div className="col" style={{ gap: '12px' }}>
-            <div className="pill">
-              <span
-                className="muted"
-                style={{ fontSize: '12px', letterSpacing: '.08em', textTransform: 'uppercase' }}
-              >
-                Heure actuelle
-              </span>
-              <span id="nowClock" className="mono" style={{ fontSize: '18px' }}>
-                {formatClock(wallNow)}
-              </span>
-            </div>
-
             <div className="grid" style={{ gridTemplateColumns: '1fr', gap: '12px' }}>
               <div className="col">
                 <label>Nombre de situations</label>
@@ -617,9 +593,6 @@ export default function App() {
           <div className="card">
             <div className="row-between">
               <div className="pill">
-                <span id="runClock" className="mono" style={{ fontSize: '18px' }}>
-                  {formatClock(wallNow)}
-                </span>
                 <span
                   id="runState"
                   className={`badge ${isFinished ? 'red' : timerState.isPaused ? 'blue' : 'gray'}`}
