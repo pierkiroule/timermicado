@@ -430,7 +430,6 @@ export default function App() {
               </text>
             </svg>
           </div>
-          <h1>MicadoTimer</h1>
           <div className="sub">
             1) CADRER Fixons l’heure de fin et le nombre de tâches.
             <br />
