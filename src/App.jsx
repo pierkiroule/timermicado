@@ -181,18 +181,22 @@ const CompressionPie = ({
       <svg width="240" height="240" viewBox="0 0 240 240" role="img" aria-label="Pression du temps">
         <defs>
           <pattern
-            id="compression-hatch"
-            width="10"
-            height="10"
+            id="compression-bubbles"
+            width="24"
+            height="24"
             patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
           >
-            <rect width="10" height="10" fill="#f8fafc" />
-            <line x1="0" y1="0" x2="0" y2="10" stroke="#94a3b8" strokeWidth="4" />
+            <rect width="24" height="24" fill="#f8fafc" />
+            <g className="pattern-bubbles">
+              <circle cx="6" cy="18" r="2.4" />
+              <circle cx="16" cy="8" r="1.8" />
+              <circle cx="20" cy="18" r="1.4" />
+              <circle cx="10" cy="12" r="1.2" />
+            </g>
           </pattern>
         </defs>
         <circle cx="120" cy="120" r="108" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
-        {hatchedPath && <path d={hatchedPath} fill="url(#compression-hatch)" />}
+        {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
         ))}
