@@ -153,6 +153,8 @@ const CompressionPie = ({
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
   const tempoScore = initialAvgMs ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
   const compression = clamp(-tempoScore, 0, 1);
+  const pressureEmoji =
+    compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
   const remainingAngle = 360 - hatchedAngle;
   const anglePerSituation = remainingCount > 0 ? remainingAngle / remainingCount : 0;
@@ -196,7 +198,7 @@ const CompressionPie = ({
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
         <text x="120" y="112" textAnchor="middle" className="pie-label">
-          Compression
+          {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
           {(compression * 100).toFixed(0)}%
