@@ -197,7 +197,14 @@ const CompressionPie = ({
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
-        <text x="120" y="112" textAnchor="middle" className="pie-label">
+        <g className="pie-bubbles" aria-hidden="true">
+          <circle className="pie-bubble bubble-1" cx="120" cy="120" r="2.6" />
+          <circle className="pie-bubble bubble-2" cx="126" cy="118" r="2.1" />
+          <circle className="pie-bubble bubble-3" cx="114" cy="122" r="1.8" />
+          <circle className="pie-bubble bubble-4" cx="132" cy="124" r="1.6" />
+          <circle className="pie-bubble bubble-5" cx="108" cy="118" r="1.4" />
+        </g>
+        <text x="120" y="110" textAnchor="middle" className="pie-emoji">
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">

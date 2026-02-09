@@ -105,9 +105,29 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .compression-pie{display:flex;flex-direction:column;align-items:center;gap:12px}
 .compression-pie svg{max-width:100%}
 .pie-label{font-size:12px;fill:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.12em}
+.pie-emoji{font-size:34px;fill:#0f172a;font-weight:800}
 .pie-value{font-size:22px;fill:#0f172a;font-weight:900}
 .pie-sub{font-size:12px;fill:#94a3b8;font-weight:700}
 .pie-meta{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.pie-bubbles{pointer-events:none}
+.pie-bubble{
+  fill:#38bdf8;
+  opacity:.7;
+  transform-box:fill-box;
+  transform-origin:center;
+  animation:bubble-rise 2.6s ease-in-out infinite;
+}
+.pie-bubble.bubble-2{animation-delay:.4s;opacity:.6}
+.pie-bubble.bubble-3{animation-delay:.8s;opacity:.55}
+.pie-bubble.bubble-4{animation-delay:1.2s;opacity:.5}
+.pie-bubble.bubble-5{animation-delay:1.6s;opacity:.45}
+
+@keyframes bubble-rise{
+  0%{transform:translate(0,0) scale(.6);opacity:0}
+  15%{opacity:.7}
+  70%{opacity:.5}
+  100%{transform:translate(0,-22px) scale(1);opacity:0}
+}
 
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
