@@ -208,6 +208,12 @@ const getSliceStatus = (state, index, wallNow) => {
 
 const getTotalRemainingMs = (state, wallNow) => Math.max(0, state.endAt - wallNow);
 
+const getSliceRemainingMs = (status) => {
+  if (status.isPast) return 0;
+  if (status.isFuture) return status.durationMs;
+  return status.remainingMs;
+};
+
 export default function App() {
   const [timerState, setTimerState] = useState(loadState);
   const [wallNow, setWallNow] = useState(() => Date.now());
@@ -419,6 +425,8 @@ export default function App() {
 
   const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
   const totalRemainingMs = timerState.isConfigured ? getTotalRemainingMs(timerState, wallNow) : 0;
+  const totalDurationMs = timerState.isConfigured ? Math.max(1, timerState.endAt - timerState.startAt) : 1;
+  const totalRemainingPct = clamp((totalRemainingMs / totalDurationMs) * 100, 0, 100);
   const totalDeltaMs = timerState.isConfigured && timerState.endAt ? wallNow - timerState.endAt : 0;
   const totalDeltaLabel =
     totalDeltaMs === 0
@@ -438,64 +446,22 @@ export default function App() {
   const overtimeMs =
     !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
 
-  const renderPie = () => {
-    if (!timerState.situations.length) return null;
-
-    const idx = timerState.currentIndex;
-    const remainingCount = timerState.situations.length - idx;
-
-    const size = 250;
-    const cx = size / 2;
-    const cy = size / 2;
-    const r = size / 2 - 10;
-
-    let angle = -90;
-
-    const parts = timerState.situations.slice(idx).map((s, offset) => {
-      const a = remainingCount > 0 ? 360 / remainingCount : 0;
-      const a1 = angle;
-      const a2 = angle + a;
-
-      const x1 = cx + r * Math.cos((a1 * Math.PI) / 180);
-      const y1 = cy + r * Math.sin((a1 * Math.PI) / 180);
-      const x2 = cx + r * Math.cos((a2 * Math.PI) / 180);
-      const y2 = cy + r * Math.sin((a2 * Math.PI) / 180);
-
-      const largeArc = a > 180 ? 1 : 0;
-      const d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-      const status = getSliceStatus(timerState, idx + offset, wallNow);
-      const opacity = status.isPast ? 0.25 : status.isActive ? 1 : 0.75;
-
-      angle = a2;
-
-      return (
-        <g key={s.id}>
-          <path d={d} fill={s.color} opacity={opacity} stroke="#fff" strokeWidth="3" />
-          {status.isActive && <path d={d} fill="none" stroke="#fff" strokeWidth="6" opacity="0.9" />}
-        </g>
-      );
+  const sliceSummaries = useMemo(() => {
+    if (!timerState.isConfigured) return [];
+    return timerState.situations.map((sit, index) => {
+      const status = getSliceStatus(timerState, index, wallNow);
+      return {
+        id: sit.id,
+        name: sit.name,
+        color: sit.color,
+        index,
+        status,
+        remainingMs: getSliceRemainingMs(status)
+      };
     });
+  }, [timerState, wallNow]);
 
-    const innerR = r * 0.52;
-
-    return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {parts}
-        <circle cx={cx} cy={cy} r={innerR} fill="#fff" />
-        <text
-          x={cx}
-          y={cy + 4}
-          textAnchor="middle"
-          fontSize="11"
-          fontWeight="900"
-          fill="#64748b"
-          fontFamily="ui-sans-serif, system-ui"
-        >
-          {timerState.isPaused ? '⏸ PAUSE' : 'EN COURS'}
-        </text>
-      </svg>
-    );
-  };
+  const totalRemainingSlicesMs = sliceSummaries.reduce((acc, item) => acc + item.remainingMs, 0);
 
   return (
     <div className="wrap">
@@ -704,8 +670,42 @@ export default function App() {
               <div className="hr"></div>
 
               <div className="col">
-                <label>Camembert (parts restantes)</label>
-                <div id="pieWrap" style={{ display: 'flex', justifyContent: 'center' }}>{renderPie()}</div>
+                <label>Mikado vertical (100% = durée totale)</label>
+                <div className="mikado">
+                  <div className="mikado-bar">
+                    <div className="mikado-fill" style={{ height: `${totalRemainingPct}%` }}>
+                      {sliceSummaries
+                        .filter((item) => item.remainingMs > 0)
+                        .map((item) => (
+                          <div
+                            key={item.id}
+                            className="mikado-segment"
+                            style={{
+                              height: `${
+                                totalRemainingSlicesMs > 0 ? (item.remainingMs / totalRemainingSlicesMs) * 100 : 0
+                              }%`,
+                              background: item.color
+                            }}
+                          ></div>
+                        ))}
+                    </div>
+                  </div>
+                  <div className="mikado-labels">
+                    <div className="mikado-meta">
+                      <span className="badge gray">Restant global</span>
+                      <span className="mono">{totalRemainingPct.toFixed(0)}%</span>
+                    </div>
+                    {sliceSummaries.map((item) => (
+                      <div key={item.id} className={`mikado-label${item.status.isPast ? ' past' : ''}`}>
+                        <span className="dot" style={{ background: item.color }}></span>
+                        <div className="mikado-label-text">
+                          <span>{item.name}</span>
+                          <span className="mono">{formatMMSS(item.remainingMs)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>

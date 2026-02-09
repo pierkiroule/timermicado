@@ -120,6 +120,50 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .modal.show{display:flex}
 .modal .box{max-width:420px;width:100%;background:#fff;border-radius:18px;padding:16px;box-shadow:var(--shadow)}
 svg{display:block}
+.mikado{display:grid;grid-template-columns:90px 1fr;gap:16px;align-items:stretch}
+.mikado-bar{
+  height:320px;
+  width:90px;
+  border-radius:18px;
+  border:1px solid var(--b);
+  background:#f8fafc;
+  padding:8px;
+  display:flex;
+  align-items:flex-end;
+  box-shadow:var(--flat-shadow);
+}
+.mikado-fill{
+  width:100%;
+  display:flex;
+  flex-direction:column-reverse;
+  gap:6px;
+  transition:height .2s ease;
+}
+.mikado-segment{
+  border-radius:12px;
+  min-height:6px;
+}
+.mikado-labels{display:flex;flex-direction:column;gap:10px}
+.mikado-meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-size:12px;
+  font-weight:800;
+  color:var(--muted);
+}
+.mikado-label{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:#fff;
+  border:1px solid var(--b);
+  border-radius:14px;
+  padding:8px 10px;
+  box-shadow:var(--flat-shadow);
+}
+.mikado-label.past{opacity:.5}
+.mikado-label-text{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:800}
 
 @media(min-width:700px){
   .topbar{flex-direction:row;align-items:center}
