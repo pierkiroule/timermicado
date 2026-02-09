@@ -38,10 +38,15 @@ const formatMMSS = (ms) => {
   return `${mm}:${ss}`;
 };
 
+const formatHHMM = (ms) => {
+  const d = new Date(ms);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+};
+
 const buildInitialSituations = (n) =>
   Array.from({ length: n }, (_, i) => ({
     id: i + 1,
-    name: `Situation ${i + 1}`,
+    name: `Étape ${i + 1}`,
     color: COLORS[i % COLORS.length],
     state: 'ACTIVE'
   }));
@@ -163,13 +168,13 @@ const CompressionPie = ({ situations, endAt, wallNow }) => {
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
-            Aucune situation
+            Aucune étape
           </text>
         )}
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps restant : {formatMMSS(remainingGlobalMs)}</span>
-        <span className="badge gray">Étapes en cours : {remainingCount}</span>
+        <span className="badge gray">Étapes au total : {remainingCount}</span>
       </div>
     </div>
   );
@@ -238,7 +243,7 @@ export default function App() {
         ...prev,
         situations: [
           ...prev.situations,
-          { id: newId, name: `Situation ${newId}`, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE' }
+          { id: newId, name: `Étape ${newId}`, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE' }
         ]
       };
     });
@@ -269,6 +274,8 @@ export default function App() {
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const activeCount = timerState.situations.filter((s) => s.state === 'ACTIVE').length;
+  const endTimeLabel = timerState.endAt ? formatHHMM(timerState.endAt) : '--:--';
 
   return (
     <div className="wrap">
@@ -276,7 +283,7 @@ export default function App() {
         <div>
           <h1>Timer MICADO</h1>
           <div className="sub">
-            Un minuteur clair pour suivre vos étapes et garder le rythme.
+            Un minuteur clair pour planifier vos étapes et avancer sereinement.
           </div>
         </div>
         <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
@@ -319,7 +326,7 @@ export default function App() {
               🚀 Démarrer
             </button>
 
-            <div className="sub">Choisissez une heure limite, puis laissez le tableau de bord vous guider.</div>
+            <div className="sub">Fixez une heure limite, puis suivez vos étapes en toute simplicité.</div>
           </div>
         </div>
       ) : (
@@ -328,12 +335,26 @@ export default function App() {
             <div className="section-head">
               <div>
                 <h2>Tableau de bord</h2>
-                <p className="sub">Gérez vos étapes et gardez la vue d'ensemble.</p>
+                <p className="sub">Vue rapide pour piloter vos étapes sans stress.</p>
               </div>
               <div className="pill">
                 <span id="runState" className={`badge ${isFinished ? 'red' : 'gray'}`}>
                   {isFinished ? 'TERMINÉ' : 'EN COURS'}
                 </span>
+              </div>
+            </div>
+            <div className="summary-grid">
+              <div className="summary-card">
+                <p className="summary-label">Temps restant</p>
+                <p className="summary-value">{formatMMSS(remainingGlobalMs)}</p>
+              </div>
+              <div className="summary-card">
+                <p className="summary-label">Heure de fin</p>
+                <p className="summary-value">{endTimeLabel}</p>
+              </div>
+              <div className="summary-card">
+                <p className="summary-label">Étapes actives</p>
+                <p className="summary-value">{activeCount}</p>
               </div>
             </div>
             <div className="card">
@@ -368,7 +389,7 @@ export default function App() {
                             onChange={(event) => updateSituationName(sit.id, event.target.value)}
                           />
                         </div>
-                        <span className="badge gray">{sit.state === 'ACTIVE' ? 'EN COURS' : 'PAUSE'}</span>
+                        <span className="badge gray">{sit.state === 'ACTIVE' ? 'EN COURS' : 'EN PAUSE'}</span>
                       </div>
                       <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
                         <button
@@ -398,7 +419,7 @@ export default function App() {
             <div className="section-head">
               <div>
                 <h2>Camembert du temps</h2>
-                <p className="sub">Une lecture simple pour savoir où vous en êtes.</p>
+                <p className="sub">Chaque part correspond à une étape à traiter.</p>
               </div>
             </div>
             <div className="card">
