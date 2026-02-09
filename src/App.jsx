@@ -419,12 +419,22 @@ export default function App() {
 
   const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
   const totalRemainingMs = timerState.isConfigured ? getTotalRemainingMs(timerState, wallNow) : 0;
-  const totalDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const totalDeltaMs = timerState.isConfigured && timerState.endAt ? wallNow - timerState.endAt : 0;
   const totalDeltaLabel =
-    totalDeltaMs > 0
-      ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
-      : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
+    totalDeltaMs === 0
+      ? "À l'heure"
+      : totalDeltaMs > 0
+        ? `Retard de ${formatDeltaMMSS(totalDeltaMs)}`
+        : `Avance de ${formatDeltaMMSS(totalDeltaMs)}`;
   const totalDeltaTone = totalDeltaMs > 0 ? 'red' : totalDeltaMs < 0 ? 'blue' : 'gray';
+  const currentDeltaMs = plannedEnd ? wallNow - plannedEnd : 0;
+  const currentDeltaLabel =
+    currentDeltaMs === 0
+      ? "À l'heure"
+      : currentDeltaMs > 0
+        ? `Retard de ${formatDeltaMMSS(currentDeltaMs)}`
+        : `Avance de ${formatDeltaMMSS(currentDeltaMs)}`;
+  const currentDeltaTone = currentDeltaMs > 0 ? 'red' : currentDeltaMs < 0 ? 'blue' : 'gray';
   const overtimeMs =
     !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
 
@@ -474,18 +484,7 @@ export default function App() {
         <circle cx={cx} cy={cy} r={innerR} fill="#fff" />
         <text
           x={cx}
-          y={cy - 10}
-          textAnchor="middle"
-          fontSize="20"
-          fontWeight="900"
-          fill="#0f172a"
-          fontFamily="ui-monospace, Menlo, Consolas, monospace"
-        >
-          {formatClock(wallNow)}
-        </text>
-        <text
-          x={cx}
-          y={cy + 14}
+          y={cy + 4}
           textAnchor="middle"
           fontSize="11"
           fontWeight="900"
@@ -511,14 +510,26 @@ export default function App() {
       </div>
 
       {timerState.isConfigured && (
-        <div className="dashboard">
-          <div className="stat-card">
-            <div className="stat-label">Temps global restant</div>
-            <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
+        <div className="hero-dashboard">
+          <div className="mini-dashboard">
+            <div className="stat-card emphasis">
+              <div className="stat-label">Durée globale restante</div>
+              <div className="stat-value mono">{formatMMSS(totalRemainingMs)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Retard / avance cumulée</div>
+              <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
+            </div>
           </div>
-          <div className="stat-card">
-            <div className="stat-label">Avance / retard cumulée</div>
-            <div className={`stat-value ${totalDeltaTone}`}>{totalDeltaLabel}</div>
+          <div className="mini-dashboard secondary">
+            <div className="stat-card flat">
+              <div className="stat-label">Durée restante (situation)</div>
+              <div className="stat-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</div>
+            </div>
+            <div className="stat-card flat">
+              <div className="stat-label">Retard / avance (situation)</div>
+              <div className={`stat-value ${currentDeltaTone}`}>{currentDeltaLabel}</div>
+            </div>
           </div>
         </div>
       )}
@@ -526,18 +537,6 @@ export default function App() {
       {!timerState.isConfigured ? (
         <div id="configView" className="card">
           <div className="col" style={{ gap: '12px' }}>
-            <div className="pill">
-              <span
-                className="muted"
-                style={{ fontSize: '12px', letterSpacing: '.08em', textTransform: 'uppercase' }}
-              >
-                Heure actuelle
-              </span>
-              <span id="nowClock" className="mono" style={{ fontSize: '18px' }}>
-                {formatClock(wallNow)}
-              </span>
-            </div>
-
             <div className="grid" style={{ gridTemplateColumns: '1fr', gap: '12px' }}>
               <div className="col">
                 <label>Nombre de situations</label>
@@ -594,9 +593,6 @@ export default function App() {
           <div className="card">
             <div className="row-between">
               <div className="pill">
-                <span id="runClock" className="mono" style={{ fontSize: '18px' }}>
-                  {formatClock(wallNow)}
-                </span>
                 <span
                   id="runState"
                   className={`badge ${isFinished ? 'red' : timerState.isPaused ? 'blue' : 'gray'}`}
@@ -617,19 +613,6 @@ export default function App() {
             <div className="hr"></div>
 
             <div className="col" style={{ gap: '10px' }}>
-              <div className="active-line">
-                <div className="active-metric">
-                  <span className="active-label">Durée restante</span>
-                  <span className="active-value mono">{formatMMSS(activeStatus?.remainingMs ?? 0)}</span>
-                </div>
-                <div className="active-metric">
-                  <span className="active-label">Retard</span>
-                  <span className={`active-value ${overtimeMs > 0 ? 'red' : 'blue'}`}>
-                    {overtimeMs > 0 ? formatMMSS(overtimeMs) : '00:00'}
-                  </span>
-                </div>
-              </div>
-              <div className="current-time-label">Heure actuelle : {formatClock(wallNow)}</div>
               <div className="row-between">
                 <div className="badge gray">
                   Temps total restant :
