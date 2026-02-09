@@ -94,6 +94,16 @@ const syncPlan = (state, fromWallNow, remainingFromWallNow = fromWallNow) => {
   };
 };
 
+const syncFuturePlan = (state, fromWallNow) => {
+  const nextIndex = state.currentIndex + 1;
+  if (nextIndex >= state.situations.length) return state;
+  const tempState = syncPlan({ ...state, currentIndex: nextIndex }, fromWallNow);
+  return {
+    ...tempState,
+    currentIndex: state.currentIndex
+  };
+};
+
 const loadState = () => {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -224,8 +234,8 @@ export default function App() {
         const idx = prev.currentIndex;
         const p = prev.plan[idx];
         if (!p) return prev;
-        if (now >= p.plannedEnd && idx < prev.situations.length - 1) {
-          return syncPlan({ ...prev, currentIndex: idx + 1 }, now);
+        if (now >= p.plannedEnd) {
+          return syncFuturePlan(prev, now);
         }
         return prev;
       });
@@ -401,6 +411,8 @@ export default function App() {
   }, [timerState]);
 
   const isFinished = timerState.isConfigured && wallNow >= timerState.endAt;
+  const overtimeMs =
+    !timerState.isPaused && plannedEnd && wallNow > plannedEnd ? wallNow - plannedEnd : 0;
 
   const renderPie = () => {
     if (!timerState.situations.length) return null;
@@ -623,6 +635,11 @@ export default function App() {
                     {deltaInfo && (
                       <div style={{ marginTop: '10px' }}>
                         <span className={`badge ${deltaInfo.tone}`}>{deltaInfo.label}</span>
+                      </div>
+                    )}
+                    {overtimeMs > 0 && (
+                      <div style={{ marginTop: '10px' }}>
+                        <span className="badge red">Retard de {formatMMSS(overtimeMs)}</span>
                       </div>
                     )}
                   </>
