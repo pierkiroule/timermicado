@@ -39,6 +39,16 @@ const formatMMSS = (ms) => {
   return `${mm}:${ss}`;
 };
 
+const formatDateTime = (timestamp) => {
+  if (!Number.isFinite(timestamp)) return 'date inconnue';
+  return new Date(timestamp).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 const buildInitialSituations = (n) =>
   Array.from({ length: n }, (_, i) => ({
     id: i + 1,
@@ -358,6 +368,7 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState(initialData.activeSessionId);
   const [sessionName, setSessionName] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
+  const [sessionNotice, setSessionNotice] = useState('');
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -391,7 +402,7 @@ export default function App() {
     return () => window.clearInterval(tickRef.current);
   }, []);
 
-  const upsertSessionFromTimer = (name, sourceTimerState = timerState, forcedId = null) => {
+  const upsertSessionFromTimer = ({ name, sourceTimerState = timerState, forcedId = null, notice = '' }) => {
     const cleanName = name.trim();
     if (!cleanName || !sourceTimerState.situations.length) return null;
 
@@ -415,13 +426,14 @@ export default function App() {
           ...nextSession,
           createdAt: existing.createdAt ?? now
         };
-        return [...prev.slice(0, idx), updated, ...prev.slice(idx + 1)];
+        return [updated, ...prev.filter((session) => session.id !== nextId)];
       }
       return [nextSession, ...prev];
     });
 
     setActiveSessionId(nextId);
     setSelectedSessionId(nextId);
+    if (notice) setSessionNotice(notice);
     return nextId;
   };
 
@@ -443,22 +455,31 @@ export default function App() {
     };
 
     setTimerState(nextTimerState);
-
-    if (sessionName.trim()) {
-      upsertSessionFromTimer(sessionName, nextTimerState);
-      setSessionName('');
-    }
+    setSessionNotice('Nouvelle session lancée. Sauvegardez-la si vous voulez la réutiliser plus tard.');
   };
 
   const handleSaveSession = () => {
     if (!sessionName.trim()) return;
-    upsertSessionFromTimer(sessionName);
+    upsertSessionFromTimer({
+      name: sessionName,
+      notice: 'Sauvegarde créée avec succès.'
+    });
     setSessionName('');
   };
 
-  const handleLoadSession = () => {
-    if (!selectedSessionId || !configValues.end) return;
+  const handleUpdateSelectedSession = () => {
     const target = sessions.find((session) => session.id === selectedSessionId);
+    if (!target) return;
+    upsertSessionFromTimer({
+      name: target.name,
+      forcedId: target.id,
+      notice: `Sauvegarde « ${target.name} » mise à jour avec la liste actuelle.`
+    });
+  };
+
+  const handleLoadSession = (sessionId = selectedSessionId) => {
+    if (!sessionId || !configValues.end) return;
+    const target = sessions.find((session) => session.id === sessionId);
     if (!target || !target.situations.length) return;
 
     initialAvgRef.current = null;
@@ -474,15 +495,23 @@ export default function App() {
       initialCount: target.initialCount ?? target.situations.length
     });
     setActiveSessionId(target.id);
+    setSelectedSessionId(target.id);
+    setSessionNotice(`Session « ${target.name} » reprise avec une nouvelle heure de fin.`);
   };
 
-  const handleDeleteSelectedSession = () => {
-    if (!selectedSessionId) return;
-    setSessions((prev) => prev.filter((session) => session.id !== selectedSessionId));
-    if (activeSessionId === selectedSessionId) {
+  const handleDeleteSelectedSession = (sessionId = selectedSessionId) => {
+    if (!sessionId) return;
+    const target = sessions.find((session) => session.id === sessionId);
+    setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+    if (activeSessionId === sessionId) {
       setActiveSessionId(null);
     }
-    setSelectedSessionId('');
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId('');
+    }
+    if (target) {
+      setSessionNotice(`Sauvegarde « ${target.name} » supprimée.`);
+    }
   };
 
   const handleReset = () => {
@@ -537,7 +566,8 @@ export default function App() {
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
-  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
 
   return (
@@ -704,77 +734,96 @@ export default function App() {
         </div>
       )}
 
+
       <div className="card sessions-panel">
         <div className="row-between" style={{ marginBottom: '12px' }}>
           <div className="row" style={{ gap: '10px' }}>
-            <span className="badge blue">💾 Sessions sauvegardées</span>
-            <span className="badge gray">{sessions.length} session{sessions.length > 1 ? 's' : ''}</span>
+            <span className="badge blue">💾 Bibliothèque de sessions</span>
+            <span className="badge gray">{sortedSessions.length} sauvegarde{sortedSessions.length > 1 ? 's' : ''}</span>
           </div>
         </div>
 
-        <div className="sessions-help">
-          <div className="session-step">
-            <strong>1) Sauvegarder la session actuelle</strong>
-            <span>Conserve la liste de situations (noms, états et couleurs) pour la reprendre plus tard.</span>
-          </div>
-          <div className="session-step">
-            <strong>2) Reprendre un autre jour</strong>
-            <span>Sélectionnez une session + une nouvelle heure de fin, puis cliquez sur <em>Reprendre</em>.</span>
-          </div>
+        <div className="session-principle">
+          Une sauvegarde contient votre <strong>liste de situations</strong> (noms, états, couleurs).
+          Le <strong>timer</strong> est recréé au moment de la reprise avec une nouvelle heure de fin.
         </div>
 
-        <div className="grid session-controls better">
-          <div className="col">
-            <label>Nom de la sauvegarde</label>
-            <input
-              type="text"
-              placeholder="Ex: Atelier lundi"
-              value={sessionName}
-              onChange={(event) => setSessionName(event.target.value)}
-            />
-          </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleSaveSession}
-            disabled={!sessionName.trim() || !timerState.situations.length}
-          >
-            Sauvegarder la session en cours
-          </button>
-        </div>
-
-        <div className="grid session-controls better" style={{ marginTop: '10px' }}>
-          <div className="col">
-            <label>Session à reprendre</label>
-            <select
-              value={selectedSessionId}
-              onChange={(event) => setSelectedSessionId(event.target.value)}
-            >
-              <option value="">Choisir une session</option>
-              {sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.name} ({session.situations.length} situations)
-                </option>
-              ))}
-            </select>
+        <div className="grid sessions-layout">
+          <div className="card session-subcard">
+            <div className="col" style={{ gap: '10px' }}>
+              <label>Créer une nouvelle sauvegarde</label>
+              <input
+                type="text"
+                placeholder="Ex: Réunion pilotage"
+                value={sessionName}
+                onChange={(event) => setSessionName(event.target.value)}
+              />
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSaveSession}
+                disabled={!sessionName.trim() || !timerState.situations.length}
+              >
+                Sauvegarder la liste actuelle
+              </button>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={handleUpdateSelectedSession}
+                disabled={!selectedSession || !timerState.situations.length}
+              >
+                Mettre à jour la sauvegarde sélectionnée
+              </button>
+              <div className="sub">Astuce : utilisez “Mettre à jour” quand vous avez retouché les intitulés de la liste.</div>
+            </div>
           </div>
 
-          <div className="session-action-block">
-            <button type="button" className="btn-outline" onClick={handleLoadSession} disabled={!canResumeSession}>
-              Reprendre avec la nouvelle heure de fin
-            </button>
-            <button type="button" className="btn-outline danger" onClick={handleDeleteSelectedSession} disabled={!selectedSessionId}>
-              Supprimer cette sauvegarde
-            </button>
+          <div className="card session-subcard">
+            <div className="col" style={{ gap: '10px' }}>
+              <label>Reprendre une sauvegarde</label>
+              <div className="session-list">
+                {sortedSessions.length === 0 ? (
+                  <div className="session-empty">Aucune sauvegarde pour le moment.</div>
+                ) : (
+                  sortedSessions.map((session) => {
+                    const isSelected = selectedSessionId === session.id;
+                    const isActive = activeSessionId === session.id;
+                    return (
+                      <button
+                        key={session.id}
+                        type="button"
+                        className={`session-row ${isSelected ? 'selected' : ''}`}
+                        onClick={() => setSelectedSessionId(session.id)}
+                      >
+                        <div className="session-row-main">
+                          <strong>{session.name}</strong>
+                          <span>{session.situations.length} situations · MAJ {formatDateTime(session.updatedAt)}</span>
+                        </div>
+                        {isActive && <span className="badge gray">Active</span>}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="session-action-block">
+                <button type="button" className="btn-outline" onClick={() => handleLoadSession()} disabled={!canResumeSession}>
+                  Reprendre (heure de fin ci-dessus)
+                </button>
+                <button type="button" className="btn-outline danger" onClick={() => handleDeleteSelectedSession()} disabled={!selectedSession}>
+                  Supprimer la sauvegarde sélectionnée
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="sub">
           {selectedSession
-            ? `Session sélectionnée : ${selectedSession.name} (${selectedSession.situations.length} situations).`
-            : 'Aucune session sélectionnée.'}{' '}
-          Pour reprendre, renseignez d’abord le champ <strong>Heure fin</strong> plus haut.
+            ? `Sélection : ${selectedSession.name}. Pour reprendre, renseignez d’abord le champ Heure fin.`
+            : 'Sélectionnez une sauvegarde dans la liste de droite.'}
         </div>
+        {sessionNotice && <div className="session-notice">{sessionNotice}</div>}
       </div>
 
 

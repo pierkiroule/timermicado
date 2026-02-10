@@ -136,21 +136,52 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 
 .sessions-panel{margin-top:16px}
-.sessions-help{display:grid;gap:10px;margin-bottom:12px}
-.session-step{
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  padding:10px 12px;
+.session-principle{
+  margin-bottom:12px;
+  padding:12px;
   border-radius:14px;
-  background:rgba(15,23,42,.32);
-  border:1px solid rgba(148,163,184,.3);
+  border:1px solid rgba(125,211,252,.35);
+  background:rgba(14,116,144,.12);
+  color:#dbeafe;
+  font-size:13px;
+  line-height:1.45;
 }
-.session-step strong{font-size:13px;color:#e2e8f0}
-.session-step span{font-size:12px;color:var(--muted)}
+.sessions-layout{gap:12px;grid-template-columns:1fr}
+.session-subcard{
+  padding:14px;
+  border-radius:16px;
+  background:rgba(15,23,42,.25);
+  border:1px solid rgba(148,163,184,.28);
+  box-shadow:none;
+}
+.session-list{display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto}
+.session-row{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  text-align:left;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(15,23,42,.25);
+  border-radius:12px;
+  padding:10px;
+}
+.session-row.selected{border-color:#7dd3fc;background:rgba(14,116,144,.2)}
+.session-row-main{display:flex;flex-direction:column;gap:2px}
+.session-row-main strong{font-size:13px;color:#f8fafc}
+.session-row-main span{font-size:12px;color:#cbd5e1}
+.session-empty{font-size:13px;color:var(--muted);padding:8px 2px}
 .session-action-block{display:flex;flex-direction:column;gap:10px;justify-content:flex-end}
-.session-controls.better .btn-primary,
-.session-controls.better .btn-outline{width:100%}
+.session-notice{
+  margin-top:10px;
+  border:1px solid rgba(134,239,172,.45);
+  color:#dcfce7;
+  background:rgba(22,163,74,.2);
+  border-radius:12px;
+  padding:10px 12px;
+  font-size:13px;
+}
 
 .compression-pie{display:flex;flex-direction:column;align-items:center;gap:12px}
 .compression-pie svg{max-width:100%}
@@ -231,9 +262,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 
 
-@media(min-width:700px){
-  .session-controls{grid-template-columns:2fr 1fr;align-items:end}
-  .sessions-help{grid-template-columns:1fr 1fr}
+@media(min-width:900px){
+  .sessions-layout{grid-template-columns:1fr 1fr}
 }
 
 @media(min-width:700px){
