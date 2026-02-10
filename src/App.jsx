@@ -369,6 +369,7 @@ export default function App() {
   const [sessionName, setSessionName] = useState('');
   const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
   const [sessionNotice, setSessionNotice] = useState('');
+  const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -736,96 +737,112 @@ export default function App() {
 
 
       <div className="card sessions-panel">
-        <div className="row-between" style={{ marginBottom: '12px' }}>
+        <button
+          type="button"
+          className={`sessions-accordion-toggle ${isSessionsPanelOpen ? 'open' : ''}`}
+          onClick={() => setIsSessionsPanelOpen((prev) => !prev)}
+          aria-expanded={isSessionsPanelOpen}
+          aria-controls="sessionsAccordionPanel"
+        >
           <div className="row" style={{ gap: '10px' }}>
             <span className="badge blue">💾 Bibliothèque de sessions</span>
             <span className="badge gray">{sortedSessions.length} sauvegarde{sortedSessions.length > 1 ? 's' : ''}</span>
           </div>
+          <span className="sessions-chevron">{isSessionsPanelOpen ? '▾' : '▸'}</span>
+        </button>
+
+        <div className="sub" style={{ marginBottom: '8px' }}>
+          {isSessionsPanelOpen
+            ? 'Fermez ce panneau si vous voulez rester concentré sur le timer.'
+            : 'Ouvrir pour sauvegarder, mettre à jour ou reprendre une session existante.'}
         </div>
 
-        <div className="session-principle">
-          Une sauvegarde contient votre <strong>liste de situations</strong> (noms, états, couleurs).
-          Le <strong>timer</strong> est recréé au moment de la reprise avec une nouvelle heure de fin.
-        </div>
-
-        <div className="grid sessions-layout">
-          <div className="card session-subcard">
-            <div className="col" style={{ gap: '10px' }}>
-              <label>Créer une nouvelle sauvegarde</label>
-              <input
-                type="text"
-                placeholder="Ex: Réunion pilotage"
-                value={sessionName}
-                onChange={(event) => setSessionName(event.target.value)}
-              />
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleSaveSession}
-                disabled={!sessionName.trim() || !timerState.situations.length}
-              >
-                Sauvegarder la liste actuelle
-              </button>
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={handleUpdateSelectedSession}
-                disabled={!selectedSession || !timerState.situations.length}
-              >
-                Mettre à jour la sauvegarde sélectionnée
-              </button>
-              <div className="sub">Astuce : utilisez “Mettre à jour” quand vous avez retouché les intitulés de la liste.</div>
+        {isSessionsPanelOpen && (
+          <div id="sessionsAccordionPanel">
+            <div className="session-principle">
+              Une sauvegarde contient votre <strong>liste de situations</strong> (noms, états, couleurs).
+              Le <strong>timer</strong> est recréé au moment de la reprise avec une nouvelle heure de fin.
             </div>
-          </div>
 
-          <div className="card session-subcard">
-            <div className="col" style={{ gap: '10px' }}>
-              <label>Reprendre une sauvegarde</label>
-              <div className="session-list">
-                {sortedSessions.length === 0 ? (
-                  <div className="session-empty">Aucune sauvegarde pour le moment.</div>
-                ) : (
-                  sortedSessions.map((session) => {
-                    const isSelected = selectedSessionId === session.id;
-                    const isActive = activeSessionId === session.id;
-                    return (
-                      <button
-                        key={session.id}
-                        type="button"
-                        className={`session-row ${isSelected ? 'selected' : ''}`}
-                        onClick={() => setSelectedSessionId(session.id)}
-                      >
-                        <div className="session-row-main">
-                          <strong>{session.name}</strong>
-                          <span>{session.situations.length} situations · MAJ {formatDateTime(session.updatedAt)}</span>
-                        </div>
-                        {isActive && <span className="badge gray">Active</span>}
-                      </button>
-                    );
-                  })
-                )}
+            <div className="grid sessions-layout">
+              <div className="card session-subcard">
+                <div className="col" style={{ gap: '10px' }}>
+                  <label>Créer une nouvelle sauvegarde</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Réunion pilotage"
+                    value={sessionName}
+                    onChange={(event) => setSessionName(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveSession}
+                    disabled={!sessionName.trim() || !timerState.situations.length}
+                  >
+                    Sauvegarder la liste actuelle
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={handleUpdateSelectedSession}
+                    disabled={!selectedSession || !timerState.situations.length}
+                  >
+                    Mettre à jour la sauvegarde sélectionnée
+                  </button>
+                  <div className="sub">Astuce : utilisez “Mettre à jour” quand vous avez retouché les intitulés de la liste.</div>
+                </div>
               </div>
 
-              <div className="session-action-block">
-                <button type="button" className="btn-outline" onClick={() => handleLoadSession()} disabled={!canResumeSession}>
-                  Reprendre (heure de fin ci-dessus)
-                </button>
-                <button type="button" className="btn-outline danger" onClick={() => handleDeleteSelectedSession()} disabled={!selectedSession}>
-                  Supprimer la sauvegarde sélectionnée
-                </button>
+              <div className="card session-subcard">
+                <div className="col" style={{ gap: '10px' }}>
+                  <label>Reprendre une sauvegarde</label>
+                  <div className="session-list">
+                    {sortedSessions.length === 0 ? (
+                      <div className="session-empty">Aucune sauvegarde pour le moment.</div>
+                    ) : (
+                      sortedSessions.map((session) => {
+                        const isSelected = selectedSessionId === session.id;
+                        const isActive = activeSessionId === session.id;
+                        return (
+                          <button
+                            key={session.id}
+                            type="button"
+                            className={`session-row ${isSelected ? 'selected' : ''}`}
+                            onClick={() => setSelectedSessionId(session.id)}
+                          >
+                            <div className="session-row-main">
+                              <strong>{session.name}</strong>
+                              <span>{session.situations.length} situations · MAJ {formatDateTime(session.updatedAt)}</span>
+                            </div>
+                            {isActive && <span className="badge gray">Active</span>}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="session-action-block">
+                    <button type="button" className="btn-outline" onClick={() => handleLoadSession()} disabled={!canResumeSession}>
+                      Reprendre (heure de fin ci-dessus)
+                    </button>
+                    <button type="button" className="btn-outline danger" onClick={() => handleDeleteSelectedSession()} disabled={!selectedSession}>
+                      Supprimer la sauvegarde sélectionnée
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div className="sub">
-          {selectedSession
-            ? `Sélection : ${selectedSession.name}. Pour reprendre, renseignez d’abord le champ Heure fin.`
-            : 'Sélectionnez une sauvegarde dans la liste de droite.'}
-        </div>
-        {sessionNotice && <div className="session-notice">{sessionNotice}</div>}
+            <div className="sub">
+              {selectedSession
+                ? `Sélection : ${selectedSession.name}. Pour reprendre, renseignez d’abord le champ Heure fin.`
+                : 'Sélectionnez une sauvegarde dans la liste de droite.'}
+            </div>
+            {sessionNotice && <div className="session-notice">{sessionNotice}</div>}
+          </div>
+        )}
       </div>
-
 
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">

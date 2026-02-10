@@ -136,6 +136,21 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 
 .sessions-panel{margin-top:16px}
+
+.sessions-accordion-toggle{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:4px 0 10px;
+  background:transparent;
+  border:0;
+  color:var(--txt-strong);
+}
+.sessions-chevron{font-size:18px;color:#cbd5e1;transition:transform .15s ease}
+.sessions-accordion-toggle.open .sessions-chevron{transform:rotate(0deg)}
+
 .session-principle{
   margin-bottom:12px;
   padding:12px;
