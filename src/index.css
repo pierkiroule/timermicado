@@ -59,7 +59,7 @@ input[type="time"], input[type="number"], input[type="text"], select{
 input[type="text"]{font-size:14px;font-weight:600}
 select{font-size:14px;font-weight:600}
 input::placeholder{color:rgba(226,232,240,.6)}
-input:focus{border-color:rgba(99,102,241,.8);box-shadow:0 0 0 3px rgba(99,102,241,.2)}
+input:focus, select:focus{border-color:rgba(99,102,241,.8);box-shadow:0 0 0 3px rgba(99,102,241,.2)}
 button{
   border:0;
   border-radius:16px;
@@ -133,6 +133,24 @@ button:disabled{opacity:.5;cursor:not-allowed}
   backdrop-filter: var(--glass);
   -webkit-backdrop-filter: var(--glass);
 }
+
+
+.sessions-panel{margin-top:16px}
+.sessions-help{display:grid;gap:10px;margin-bottom:12px}
+.session-step{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  padding:10px 12px;
+  border-radius:14px;
+  background:rgba(15,23,42,.32);
+  border:1px solid rgba(148,163,184,.3);
+}
+.session-step strong{font-size:13px;color:#e2e8f0}
+.session-step span{font-size:12px;color:var(--muted)}
+.session-action-block{display:flex;flex-direction:column;gap:10px;justify-content:flex-end}
+.session-controls.better .btn-primary,
+.session-controls.better .btn-outline{width:100%}
 
 .compression-pie{display:flex;flex-direction:column;align-items:center;gap:12px}
 .compression-pie svg{max-width:100%}
@@ -215,6 +233,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 
 @media(min-width:700px){
   .session-controls{grid-template-columns:2fr 1fr;align-items:end}
+  .sessions-help{grid-template-columns:1fr 1fr}
 }
 
 @media(min-width:700px){

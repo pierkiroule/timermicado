@@ -537,6 +537,8 @@ export default function App() {
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const canResumeSession = Boolean(selectedSession && configValues.end);
 
   return (
     <div className="wrap">
@@ -577,51 +579,7 @@ export default function App() {
         </button>
       </div>
 
-      <div className="card" style={{ marginBottom: '16px' }}>
-        <div className="col" style={{ gap: '12px' }}>
-          <span className="badge gray">💾 Sessions sauvegardées</span>
-          <div className="grid session-controls">
-            <div className="col">
-              <label>Nom de session</label>
-              <input
-                type="text"
-                placeholder="Ex: Atelier lundi"
-                value={sessionName}
-                onChange={(event) => setSessionName(event.target.value)}
-              />
-            </div>
-            <button type="button" className="btn-outline" onClick={handleSaveSession} disabled={!sessionName.trim() || !timerState.situations.length}>
-              Sauvegarder la session active
-            </button>
-          </div>
 
-          <div className="grid session-controls">
-            <div className="col">
-              <label>Reprendre une session (avec nouvelle heure de fin)</label>
-              <select
-                value={selectedSessionId}
-                onChange={(event) => setSelectedSessionId(event.target.value)}
-              >
-                <option value="">Choisir une session</option>
-                {sessions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {session.name} ({session.situations.length} situations)
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="row" style={{ gap: '10px' }}>
-              <button type="button" className="btn-outline" onClick={handleLoadSession} disabled={!selectedSessionId || !configValues.end}>
-                Reprendre
-              </button>
-              <button type="button" className="btn-outline danger" onClick={handleDeleteSelectedSession} disabled={!selectedSessionId}>
-                Supprimer
-              </button>
-            </div>
-          </div>
-          <div className="sub">Choisissez une heure de fin ci-dessous avant de reprendre une session existante.</div>
-        </div>
-      </div>
 
       {!timerState.isConfigured ? (
         <div id="configView" className="card">
@@ -745,6 +703,80 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <div className="card sessions-panel">
+        <div className="row-between" style={{ marginBottom: '12px' }}>
+          <div className="row" style={{ gap: '10px' }}>
+            <span className="badge blue">💾 Sessions sauvegardées</span>
+            <span className="badge gray">{sessions.length} session{sessions.length > 1 ? 's' : ''}</span>
+          </div>
+        </div>
+
+        <div className="sessions-help">
+          <div className="session-step">
+            <strong>1) Sauvegarder la session actuelle</strong>
+            <span>Conserve la liste de situations (noms, états et couleurs) pour la reprendre plus tard.</span>
+          </div>
+          <div className="session-step">
+            <strong>2) Reprendre un autre jour</strong>
+            <span>Sélectionnez une session + une nouvelle heure de fin, puis cliquez sur <em>Reprendre</em>.</span>
+          </div>
+        </div>
+
+        <div className="grid session-controls better">
+          <div className="col">
+            <label>Nom de la sauvegarde</label>
+            <input
+              type="text"
+              placeholder="Ex: Atelier lundi"
+              value={sessionName}
+              onChange={(event) => setSessionName(event.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleSaveSession}
+            disabled={!sessionName.trim() || !timerState.situations.length}
+          >
+            Sauvegarder la session en cours
+          </button>
+        </div>
+
+        <div className="grid session-controls better" style={{ marginTop: '10px' }}>
+          <div className="col">
+            <label>Session à reprendre</label>
+            <select
+              value={selectedSessionId}
+              onChange={(event) => setSelectedSessionId(event.target.value)}
+            >
+              <option value="">Choisir une session</option>
+              {sessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.name} ({session.situations.length} situations)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="session-action-block">
+            <button type="button" className="btn-outline" onClick={handleLoadSession} disabled={!canResumeSession}>
+              Reprendre avec la nouvelle heure de fin
+            </button>
+            <button type="button" className="btn-outline danger" onClick={handleDeleteSelectedSession} disabled={!selectedSessionId}>
+              Supprimer cette sauvegarde
+            </button>
+          </div>
+        </div>
+
+        <div className="sub">
+          {selectedSession
+            ? `Session sélectionnée : ${selectedSession.name} (${selectedSession.situations.length} situations).`
+            : 'Aucune session sélectionnée.'}{' '}
+          Pour reprendre, renseignez d’abord le champ <strong>Heure fin</strong> plus haut.
+        </div>
+      </div>
+
 
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">
