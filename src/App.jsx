@@ -71,6 +71,8 @@ const normalizeState = (data) => {
     startAt !== null &&
     endAt !== null &&
     endAt > startAt;
+  const isPaused = Boolean(data.isPaused) && isConfigured;
+  const pausedAt = isPaused && Number.isFinite(data.pausedAt) ? data.pausedAt : null;
 
   return {
     ...data,
@@ -78,7 +80,9 @@ const normalizeState = (data) => {
     situations,
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
-    initialCount
+    initialCount,
+    isPaused,
+    pausedAt
   };
 };
 
@@ -87,7 +91,9 @@ const emptyTimerState = {
   situations: [],
   startAt: null,
   endAt: null,
-  initialCount: null
+  initialCount: null,
+  isPaused: false,
+  pausedAt: null
 };
 
 const createSessionFromTimerState = (timerState, name = 'Session importée') => {
@@ -472,7 +478,9 @@ export default function App() {
       situations: buildInitialSituations(n),
       startAt: now,
       endAt,
-      initialCount: n
+      initialCount: n,
+      isPaused: false,
+      pausedAt: null
     };
 
     setTimerState(nextTimerState);
@@ -513,7 +521,9 @@ export default function App() {
       situations: target.situations,
       startAt: now,
       endAt,
-      initialCount: target.situations.length
+      initialCount: target.situations.length,
+      isPaused: false,
+      pausedAt: null
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
@@ -561,15 +571,6 @@ export default function App() {
     }));
   };
 
-  const toggleSituation = (id) => {
-    setTimerState((prev) => ({
-      ...prev,
-      situations: prev.situations.map((s) =>
-        s.id === id ? { ...s, state: s.state === 'ACTIVE' ? 'PAUSE' : 'ACTIVE' } : s
-      )
-    }));
-  };
-
   const updateSituationName = (id, value) => {
     setTimerState((prev) => ({
       ...prev,
@@ -585,11 +586,37 @@ export default function App() {
     }
   }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
-  const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
+  const effectiveNow = timerState.isPaused && timerState.pausedAt ? timerState.pausedAt : wallNow;
+  const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - effectiveNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+
+  const toggleGlobalPause = () => {
+    if (!timerState.isConfigured || isFinished) return;
+
+    if (timerState.isPaused && timerState.pausedAt) {
+      const now = Date.now();
+      const pauseDuration = Math.max(0, now - timerState.pausedAt);
+      setTimerState((prev) => ({
+        ...prev,
+        endAt: prev.endAt + pauseDuration,
+        isPaused: false,
+        pausedAt: null
+      }));
+      setWallNow(now);
+      return;
+    }
+
+    const now = Date.now();
+    setTimerState((prev) => ({
+      ...prev,
+      isPaused: true,
+      pausedAt: now
+    }));
+    setWallNow(now);
+  };
 
   return (
     <div className="wrap">
@@ -625,9 +652,16 @@ export default function App() {
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
-        <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
-          🗑️ Nouvelle session
-        </button>
+        <div className="row" style={{ gap: '10px' }}>
+          {timerState.isConfigured && (
+            <button type="button" className="btn-primary" onClick={toggleGlobalPause} disabled={isFinished}>
+              {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+            </button>
+          )}
+          <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
+            🗑️ Nouvelle session
+          </button>
+        </div>
       </div>
 
 
@@ -676,7 +710,7 @@ export default function App() {
             <div className="row-between">
               <div className="pill">
                 <span id="runState" className={`badge ${isFinished ? 'red' : 'gray'}`}>
-                  {isFinished ? 'TERMINÉ' : 'EN COURS'}
+                  {isFinished ? 'TERMINÉ' : timerState.isPaused ? 'EN PAUSE' : 'EN COURS'}
                 </span>
               </div>
             </div>
@@ -691,7 +725,7 @@ export default function App() {
                 situations={timerState.situations}
                 startAt={timerState.startAt}
                 endAt={timerState.endAt}
-                wallNow={wallNow}
+                wallNow={effectiveNow}
                 initialAvgMs={initialAvgRef.current}
               />
             </div>
@@ -729,16 +763,9 @@ export default function App() {
                           onChange={(event) => updateSituationName(sit.id, event.target.value)}
                         />
                       </div>
-                      <span className="badge gray">{sit.state === 'ACTIVE' ? 'ACTIVE' : 'PAUSE'}</span>
+                      <span className="badge gray">ACTIVE</span>
                     </div>
                     <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn-outline"
-                        onClick={() => toggleSituation(sit.id)}
-                      >
-                        {sit.state === 'ACTIVE' ? '⏸ Pause' : '▶️ Reprendre'}
-                      </button>
                       <button
                         type="button"
                         className="btn-outline danger"
