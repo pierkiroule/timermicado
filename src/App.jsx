@@ -638,11 +638,18 @@ export default function App() {
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
-        <div className="row" style={{ gap: '10px' }}>
+        <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           {timerState.isConfigured && (
-            <button type="button" className="btn-primary" onClick={toggleGlobalPause} disabled={isFinished}>
-              {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
-            </button>
+            <>
+              <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
+                {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+              </button>
+              {timerState.isPaused && (
+                <span className="pause-live" aria-live="polite">
+                  Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
+                </span>
+              )}
+            </>
           )}
           <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
             🗑️ Nouvelle session
@@ -708,12 +715,6 @@ export default function App() {
                 Le camembert représente la compression temporelle instantanée et la répartition actuelle.
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
-                {timerState.isPaused && (
-                  <>
-                    <br />
-                    Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
-                  </>
-                )}
               </div>
               <CompressionPie
                 situations={timerState.situations}
