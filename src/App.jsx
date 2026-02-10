@@ -412,7 +412,7 @@ export default function App() {
       id: nextId,
       name: cleanName,
       situations: sourceTimerState.situations,
-      initialCount: sourceTimerState.initialCount ?? sourceTimerState.situations.length,
+      initialCount: sourceTimerState.situations.length,
       createdAt: now,
       updatedAt: now
     };
@@ -492,7 +492,7 @@ export default function App() {
       situations: target.situations,
       startAt: now,
       endAt,
-      initialCount: target.initialCount ?? target.situations.length
+      initialCount: target.situations.length
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
