@@ -71,6 +71,8 @@ const normalizeState = (data) => {
     startAt !== null &&
     endAt !== null &&
     endAt > startAt;
+  const isPaused = Boolean(data.isPaused) && isConfigured;
+  const pausedAt = isPaused && Number.isFinite(data.pausedAt) ? data.pausedAt : null;
 
   return {
     ...data,
@@ -78,7 +80,9 @@ const normalizeState = (data) => {
     situations,
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
-    initialCount
+    initialCount,
+    isPaused,
+    pausedAt
   };
 };
 
@@ -87,7 +91,9 @@ const emptyTimerState = {
   situations: [],
   startAt: null,
   endAt: null,
-  initialCount: null
+  initialCount: null,
+  isPaused: false,
+  pausedAt: null
 };
 
 const createSessionFromTimerState = (timerState, name = 'Session importée') => {
@@ -472,7 +478,9 @@ export default function App() {
       situations: buildInitialSituations(n),
       startAt: now,
       endAt,
-      initialCount: n
+      initialCount: n,
+      isPaused: false,
+      pausedAt: null
     };
 
     setTimerState(nextTimerState);
@@ -513,7 +521,9 @@ export default function App() {
       situations: target.situations,
       startAt: now,
       endAt,
-      initialCount: target.situations.length
+      initialCount: target.situations.length,
+      isPaused: false,
+      pausedAt: null
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
@@ -561,15 +571,6 @@ export default function App() {
     }));
   };
 
-  const toggleSituation = (id) => {
-    setTimerState((prev) => ({
-      ...prev,
-      situations: prev.situations.map((s) =>
-        s.id === id ? { ...s, state: s.state === 'ACTIVE' ? 'PAUSE' : 'ACTIVE' } : s
-      )
-    }));
-  };
-
   const updateSituationName = (id, value) => {
     setTimerState((prev) => ({
       ...prev,
@@ -586,10 +587,22 @@ export default function App() {
   }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
+  const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+
+  const toggleGlobalPause = () => {
+    if (!timerState.isConfigured || isFinished) return;
+
+    const now = Date.now();
+    setTimerState((prev) => ({
+      ...prev,
+      isPaused: !prev.isPaused,
+      pausedAt: prev.isPaused ? null : now
+    }));
+  };
 
   return (
     <div className="wrap">
@@ -625,9 +638,23 @@ export default function App() {
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
-        <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
-          🗑️ Nouvelle session
-        </button>
+        <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {timerState.isConfigured && (
+            <>
+              <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
+                {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+              </button>
+              {timerState.isPaused && (
+                <span className="pause-live" aria-live="polite">
+                  Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
+                </span>
+              )}
+            </>
+          )}
+          <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
+            🗑️ Nouvelle session
+          </button>
+        </div>
       </div>
 
 
@@ -676,7 +703,7 @@ export default function App() {
             <div className="row-between">
               <div className="pill">
                 <span id="runState" className={`badge ${isFinished ? 'red' : 'gray'}`}>
-                  {isFinished ? 'TERMINÉ' : 'EN COURS'}
+                  {isFinished ? 'TERMINÉ' : timerState.isPaused ? 'EN PAUSE · TEMPS EN COURS' : 'EN COURS'}
                 </span>
               </div>
             </div>
@@ -686,6 +713,8 @@ export default function App() {
             <div className="col" style={{ gap: '12px' }}>
               <div className="sub">
                 Le camembert représente la compression temporelle instantanée et la répartition actuelle.
+                <br />
+                Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
               <CompressionPie
                 situations={timerState.situations}
@@ -729,16 +758,9 @@ export default function App() {
                           onChange={(event) => updateSituationName(sit.id, event.target.value)}
                         />
                       </div>
-                      <span className="badge gray">{sit.state === 'ACTIVE' ? 'ACTIVE' : 'PAUSE'}</span>
+                      <span className="badge gray">ACTIVE</span>
                     </div>
                     <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn-outline"
-                        onClick={() => toggleSituation(sit.id)}
-                      >
-                        {sit.state === 'ACTIVE' ? '⏸ Pause' : '▶️ Reprendre'}
-                      </button>
                       <button
                         type="button"
                         className="btn-outline danger"
