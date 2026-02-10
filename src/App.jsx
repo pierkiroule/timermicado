@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-const STORAGE_KEY = 'micado_timer_ultra_robust_v2';
+const LEGACY_STORAGE_KEY = 'micado_timer_ultra_robust_v2';
+const APP_STORAGE_KEY = 'micado_timer_sessions_v1';
 
 const COLORS = [
   '#6366f1',
@@ -71,39 +72,96 @@ const normalizeState = (data) => {
   };
 };
 
-const loadState = () => {
+const emptyTimerState = {
+  isConfigured: false,
+  situations: [],
+  startAt: null,
+  endAt: null,
+  initialCount: null
+};
+
+const createSessionFromTimerState = (timerState, name = 'Session importée') => {
+  const now = Date.now();
+  return {
+    id: `session-${now}`,
+    name,
+    situations: timerState.situations,
+    initialCount: timerState.initialCount ?? timerState.situations.length,
+    createdAt: now,
+    updatedAt: now
+  };
+};
+
+const normalizeSession = (session, index) => {
+  const situations = Array.isArray(session?.situations) ? session.situations : [];
+  const now = Date.now();
+  return {
+    id: typeof session?.id === 'string' ? session.id : `session-${now}-${index}`,
+    name: typeof session?.name === 'string' && session.name.trim() ? session.name.trim() : `Session ${index + 1}`,
+    situations,
+    initialCount:
+      typeof session?.initialCount === 'number' && session.initialCount > 0
+        ? session.initialCount
+        : situations.length || 1,
+    createdAt: Number.isFinite(session?.createdAt) ? session.createdAt : now,
+    updatedAt: Number.isFinite(session?.updatedAt) ? session.updatedAt : now
+  };
+};
+
+const loadAppState = () => {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
     if (!raw) {
+      const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!legacyRaw) {
+        return {
+          timerState: emptyTimerState,
+          sessions: [],
+          activeSessionId: null
+        };
+      }
+
+      const legacyParsed = JSON.parse(legacyRaw);
+      const timerState = normalizeState(legacyParsed);
+      const sessions = timerState.isConfigured
+        ? [createSessionFromTimerState(timerState)]
+        : [];
       return {
-        isConfigured: false,
-        situations: [],
-        startAt: null,
-        endAt: null,
-        initialCount: null
+        timerState,
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null
       };
     }
 
     const data = JSON.parse(raw);
-    if (!data || !data.isConfigured || !Array.isArray(data.situations)) {
+    if (!data || typeof data !== 'object') {
       return {
-        isConfigured: false,
-        situations: [],
-        startAt: null,
-        endAt: null,
-        initialCount: null
+        timerState: emptyTimerState,
+        sessions: [],
+        activeSessionId: null
       };
     }
 
-    return normalizeState(data);
+    const timerState = normalizeState(data.timerState ?? emptyTimerState);
+    const sessions = Array.isArray(data.sessions)
+      ? data.sessions.map((session, index) => normalizeSession(session, index))
+      : [];
+    const activeSessionId =
+      typeof data.activeSessionId === 'string' && sessions.some((session) => session.id === data.activeSessionId)
+        ? data.activeSessionId
+        : sessions[0]?.id ?? null;
+
+    return {
+      timerState,
+      sessions,
+      activeSessionId
+    };
   } catch (error) {
     console.warn('Impossible de charger la session.', error);
     return {
-      isConfigured: false,
-      situations: [],
-      startAt: null,
-      endAt: null,
-      initialCount: null
+      timerState: emptyTimerState,
+      sessions: [],
+      activeSessionId: null
     };
   }
 };
@@ -294,7 +352,12 @@ const CompressionPie = ({
 };
 
 export default function App() {
-  const [timerState, setTimerState] = useState(loadState);
+  const initialData = useMemo(() => loadAppState(), []);
+  const [timerState, setTimerState] = useState(initialData.timerState);
+  const [sessions, setSessions] = useState(initialData.sessions);
+  const [activeSessionId, setActiveSessionId] = useState(initialData.activeSessionId);
+  const [sessionName, setSessionName] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -306,11 +369,19 @@ export default function App() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(timerState));
+      window.localStorage.setItem(
+        APP_STORAGE_KEY,
+        JSON.stringify({
+          timerState,
+          sessions,
+          activeSessionId
+        })
+      );
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(timerState));
     } catch (error) {
       console.warn('Impossible de sauvegarder la session.', error);
     }
-  }, [timerState]);
+  }, [timerState, sessions, activeSessionId]);
 
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
@@ -320,10 +391,75 @@ export default function App() {
     return () => window.clearInterval(tickRef.current);
   }, []);
 
+  const upsertSessionFromTimer = (name, sourceTimerState = timerState, forcedId = null) => {
+    const cleanName = name.trim();
+    if (!cleanName || !sourceTimerState.situations.length) return null;
+
+    const now = Date.now();
+    const nextId = forcedId ?? `session-${now}`;
+    const nextSession = {
+      id: nextId,
+      name: cleanName,
+      situations: sourceTimerState.situations,
+      initialCount: sourceTimerState.initialCount ?? sourceTimerState.situations.length,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    setSessions((prev) => {
+      const idx = prev.findIndex((session) => session.id === nextId);
+      if (idx >= 0) {
+        const existing = prev[idx];
+        const updated = {
+          ...existing,
+          ...nextSession,
+          createdAt: existing.createdAt ?? now
+        };
+        return [...prev.slice(0, idx), updated, ...prev.slice(idx + 1)];
+      }
+      return [nextSession, ...prev];
+    });
+
+    setActiveSessionId(nextId);
+    setSelectedSessionId(nextId);
+    return nextId;
+  };
+
   const handleLaunch = () => {
     const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
-
     if (!configValues.end) return;
+
+    initialAvgRef.current = null;
+    const now = Date.now();
+    let endAt = parseTimeToToday(configValues.end);
+    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
+
+    const nextTimerState = {
+      isConfigured: true,
+      situations: buildInitialSituations(n),
+      startAt: now,
+      endAt,
+      initialCount: n
+    };
+
+    setTimerState(nextTimerState);
+
+    if (sessionName.trim()) {
+      upsertSessionFromTimer(sessionName, nextTimerState);
+      setSessionName('');
+    }
+  };
+
+  const handleSaveSession = () => {
+    if (!sessionName.trim()) return;
+    upsertSessionFromTimer(sessionName);
+    setSessionName('');
+  };
+
+  const handleLoadSession = () => {
+    if (!selectedSessionId || !configValues.end) return;
+    const target = sessions.find((session) => session.id === selectedSessionId);
+    if (!target || !target.situations.length) return;
 
     initialAvgRef.current = null;
     const now = Date.now();
@@ -332,22 +468,25 @@ export default function App() {
 
     setTimerState({
       isConfigured: true,
-      situations: buildInitialSituations(n),
+      situations: target.situations,
       startAt: now,
       endAt,
-      initialCount: n
+      initialCount: target.initialCount ?? target.situations.length
     });
+    setActiveSessionId(target.id);
+  };
+
+  const handleDeleteSelectedSession = () => {
+    if (!selectedSessionId) return;
+    setSessions((prev) => prev.filter((session) => session.id !== selectedSessionId));
+    if (activeSessionId === selectedSessionId) {
+      setActiveSessionId(null);
+    }
+    setSelectedSessionId('');
   };
 
   const handleReset = () => {
-    window.localStorage.removeItem(STORAGE_KEY);
-    setTimerState({
-      isConfigured: false,
-      situations: [],
-      startAt: null,
-      endAt: null,
-      initialCount: null
-    });
+    setTimerState(emptyTimerState);
     initialAvgRef.current = null;
     setShowReset(false);
   };
@@ -396,11 +535,6 @@ export default function App() {
     }
   }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
-  const activeCount = useMemo(
-    () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
-    [timerState.situations]
-  );
-
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
 
@@ -433,7 +567,7 @@ export default function App() {
           <div className="sub">
             1) CADRER Fixons l’heure de fin et le nombre de tâches.
             <br />
-            2) RÉGULER Observez et regulez le diagrame qui s&apos;ajuste en temps réel.
+            2) COOPÉRER Le camembert se met à jour en temps réel.
             <br />
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
@@ -441,6 +575,52 @@ export default function App() {
         <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
           🗑️ Nouvelle session
         </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <div className="col" style={{ gap: '12px' }}>
+          <span className="badge gray">💾 Sessions sauvegardées</span>
+          <div className="grid session-controls">
+            <div className="col">
+              <label>Nom de session</label>
+              <input
+                type="text"
+                placeholder="Ex: Atelier lundi"
+                value={sessionName}
+                onChange={(event) => setSessionName(event.target.value)}
+              />
+            </div>
+            <button type="button" className="btn-outline" onClick={handleSaveSession} disabled={!sessionName.trim() || !timerState.situations.length}>
+              Sauvegarder la session active
+            </button>
+          </div>
+
+          <div className="grid session-controls">
+            <div className="col">
+              <label>Reprendre une session (avec nouvelle heure de fin)</label>
+              <select
+                value={selectedSessionId}
+                onChange={(event) => setSelectedSessionId(event.target.value)}
+              >
+                <option value="">Choisir une session</option>
+                {sessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.name} ({session.situations.length} situations)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="row" style={{ gap: '10px' }}>
+              <button type="button" className="btn-outline" onClick={handleLoadSession} disabled={!selectedSessionId || !configValues.end}>
+                Reprendre
+              </button>
+              <button type="button" className="btn-outline danger" onClick={handleDeleteSelectedSession} disabled={!selectedSessionId}>
+                Supprimer
+              </button>
+            </div>
+          </div>
+          <div className="sub">Choisissez une heure de fin ci-dessous avant de reprendre une session existante.</div>
+        </div>
       </div>
 
       {!timerState.isConfigured ? (
@@ -570,14 +750,14 @@ export default function App() {
         <div className="box">
           <div style={{ fontWeight: 1000, fontSize: '18px', marginBottom: '6px' }}>Confirmer</div>
           <div className="muted" style={{ marginBottom: '14px' }}>
-            Supprimer la session et repartir à zéro ?
+            Réinitialiser la session en cours ? Les sessions sauvegardées restent disponibles.
           </div>
           <div className="row" style={{ gap: '10px' }}>
             <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setShowReset(false)}>
               Annuler
             </button>
             <button type="button" className="btn-danger" style={{ flex: 1 }} onClick={handleReset}>
-              Supprimer
+              Réinitialiser
             </button>
           </div>
         </div>
