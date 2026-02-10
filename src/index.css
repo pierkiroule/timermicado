@@ -204,6 +204,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .pie-emoji{font-size:34px;fill:#0f172a;font-weight:800}
 .pie-value{font-size:22px;fill:#0f172a;font-weight:900}
 .pie-sub{font-size:12px;fill:#94a3b8;font-weight:700}
+.pie-slice-id{font-size:15px;fill:#0f172a;font-weight:900;paint-order:stroke;stroke:rgba(248,250,252,.85);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
 .pie-meta{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
 .pie-bubbles{pointer-events:none;filter:drop-shadow(0 0 6px rgba(125,211,252,.55))}
 .pie-bubble{

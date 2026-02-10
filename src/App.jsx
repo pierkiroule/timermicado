@@ -209,6 +209,11 @@ const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
   ].join(' ');
 };
 
+const describeSliceLabelPosition = (centerX, centerY, radius, startAngle, endAngle) => {
+  const middleAngle = startAngle + (endAngle - startAngle) / 2;
+  return polarToCartesian(centerX, centerY, radius, middleAngle);
+};
+
 const CompressionPie = ({
   situations,
   startAt,
@@ -234,11 +239,14 @@ const CompressionPie = ({
   situations.forEach((sit, index) => {
     const startAngle = cursor + index * anglePerSituation;
     const endAngle = startAngle + anglePerSituation;
+    const labelPos = describeSliceLabelPosition(120, 120, 83, startAngle, endAngle);
     slices.push({
       id: sit.id,
       path: describeArc(120, 120, 100, startAngle, endAngle),
       color: sit.state === 'PAUSE' ? '#94a3b8' : sit.color,
-      state: sit.state
+      state: sit.state,
+      labelX: labelPos.x,
+      labelY: labelPos.y
     });
   });
 
@@ -327,6 +335,18 @@ const CompressionPie = ({
         {hatchedPath && <path d={hatchedPath} fill="url(#compression-bubbles)" />}
         {slices.map((slice) => (
           <path key={slice.id} d={slice.path} fill={slice.color} opacity={slice.state === 'PAUSE' ? 0.55 : 1} />
+        ))}
+        {slices.map((slice) => (
+          <text
+            key={`slice-label-${slice.id}`}
+            x={slice.labelX}
+            y={slice.labelY}
+            textAnchor="middle"
+            dominantBaseline="central"
+            className="pie-slice-id"
+          >
+            {slice.id}
+          </text>
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
         <g className="pie-bubbles" aria-hidden="true">
