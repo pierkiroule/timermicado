@@ -586,8 +586,8 @@ export default function App() {
     }
   }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
-  const effectiveNow = timerState.isPaused && timerState.pausedAt ? timerState.pausedAt : wallNow;
-  const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - effectiveNow) : 0;
+  const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
+  const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
@@ -596,26 +596,12 @@ export default function App() {
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
 
-    if (timerState.isPaused && timerState.pausedAt) {
-      const now = Date.now();
-      const pauseDuration = Math.max(0, now - timerState.pausedAt);
-      setTimerState((prev) => ({
-        ...prev,
-        endAt: prev.endAt + pauseDuration,
-        isPaused: false,
-        pausedAt: null
-      }));
-      setWallNow(now);
-      return;
-    }
-
     const now = Date.now();
     setTimerState((prev) => ({
       ...prev,
-      isPaused: true,
-      pausedAt: now
+      isPaused: !prev.isPaused,
+      pausedAt: prev.isPaused ? null : now
     }));
-    setWallNow(now);
   };
 
   return (
@@ -710,7 +696,7 @@ export default function App() {
             <div className="row-between">
               <div className="pill">
                 <span id="runState" className={`badge ${isFinished ? 'red' : 'gray'}`}>
-                  {isFinished ? 'TERMINÉ' : timerState.isPaused ? 'EN PAUSE' : 'EN COURS'}
+                  {isFinished ? 'TERMINÉ' : timerState.isPaused ? 'EN PAUSE · TEMPS EN COURS' : 'EN COURS'}
                 </span>
               </div>
             </div>
@@ -720,12 +706,20 @@ export default function App() {
             <div className="col" style={{ gap: '12px' }}>
               <div className="sub">
                 Le camembert représente la compression temporelle instantanée et la répartition actuelle.
+                <br />
+                Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
+                {timerState.isPaused && (
+                  <>
+                    <br />
+                    Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
+                  </>
+                )}
               </div>
               <CompressionPie
                 situations={timerState.situations}
                 startAt={timerState.startAt}
                 endAt={timerState.endAt}
-                wallNow={effectiveNow}
+                wallNow={wallNow}
                 initialAvgMs={initialAvgRef.current}
               />
             </div>
