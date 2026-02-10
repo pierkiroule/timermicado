@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-const STORAGE_KEY = 'micado_timer_ultra_robust_v2';
+const LEGACY_STORAGE_KEY = 'micado_timer_ultra_robust_v2';
+const APP_STORAGE_KEY = 'micado_timer_sessions_v1';
 
 const COLORS = [
   '#6366f1',
@@ -38,6 +39,16 @@ const formatMMSS = (ms) => {
   return `${mm}:${ss}`;
 };
 
+const formatDateTime = (timestamp) => {
+  if (!Number.isFinite(timestamp)) return 'date inconnue';
+  return new Date(timestamp).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
 const buildInitialSituations = (n) =>
   Array.from({ length: n }, (_, i) => ({
     id: i + 1,
@@ -71,39 +82,96 @@ const normalizeState = (data) => {
   };
 };
 
-const loadState = () => {
+const emptyTimerState = {
+  isConfigured: false,
+  situations: [],
+  startAt: null,
+  endAt: null,
+  initialCount: null
+};
+
+const createSessionFromTimerState = (timerState, name = 'Session importée') => {
+  const now = Date.now();
+  return {
+    id: `session-${now}`,
+    name,
+    situations: timerState.situations,
+    initialCount: timerState.initialCount ?? timerState.situations.length,
+    createdAt: now,
+    updatedAt: now
+  };
+};
+
+const normalizeSession = (session, index) => {
+  const situations = Array.isArray(session?.situations) ? session.situations : [];
+  const now = Date.now();
+  return {
+    id: typeof session?.id === 'string' ? session.id : `session-${now}-${index}`,
+    name: typeof session?.name === 'string' && session.name.trim() ? session.name.trim() : `Session ${index + 1}`,
+    situations,
+    initialCount:
+      typeof session?.initialCount === 'number' && session.initialCount > 0
+        ? session.initialCount
+        : situations.length || 1,
+    createdAt: Number.isFinite(session?.createdAt) ? session.createdAt : now,
+    updatedAt: Number.isFinite(session?.updatedAt) ? session.updatedAt : now
+  };
+};
+
+const loadAppState = () => {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
     if (!raw) {
+      const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (!legacyRaw) {
+        return {
+          timerState: emptyTimerState,
+          sessions: [],
+          activeSessionId: null
+        };
+      }
+
+      const legacyParsed = JSON.parse(legacyRaw);
+      const timerState = normalizeState(legacyParsed);
+      const sessions = timerState.isConfigured
+        ? [createSessionFromTimerState(timerState)]
+        : [];
       return {
-        isConfigured: false,
-        situations: [],
-        startAt: null,
-        endAt: null,
-        initialCount: null
+        timerState,
+        sessions,
+        activeSessionId: sessions[0]?.id ?? null
       };
     }
 
     const data = JSON.parse(raw);
-    if (!data || !data.isConfigured || !Array.isArray(data.situations)) {
+    if (!data || typeof data !== 'object') {
       return {
-        isConfigured: false,
-        situations: [],
-        startAt: null,
-        endAt: null,
-        initialCount: null
+        timerState: emptyTimerState,
+        sessions: [],
+        activeSessionId: null
       };
     }
 
-    return normalizeState(data);
+    const timerState = normalizeState(data.timerState ?? emptyTimerState);
+    const sessions = Array.isArray(data.sessions)
+      ? data.sessions.map((session, index) => normalizeSession(session, index))
+      : [];
+    const activeSessionId =
+      typeof data.activeSessionId === 'string' && sessions.some((session) => session.id === data.activeSessionId)
+        ? data.activeSessionId
+        : sessions[0]?.id ?? null;
+
+    return {
+      timerState,
+      sessions,
+      activeSessionId
+    };
   } catch (error) {
     console.warn('Impossible de charger la session.', error);
     return {
-      isConfigured: false,
-      situations: [],
-      startAt: null,
-      endAt: null,
-      initialCount: null
+      timerState: emptyTimerState,
+      sessions: [],
+      activeSessionId: null
     };
   }
 };
@@ -294,7 +362,14 @@ const CompressionPie = ({
 };
 
 export default function App() {
-  const [timerState, setTimerState] = useState(loadState);
+  const initialData = useMemo(() => loadAppState(), []);
+  const [timerState, setTimerState] = useState(initialData.timerState);
+  const [sessions, setSessions] = useState(initialData.sessions);
+  const [activeSessionId, setActiveSessionId] = useState(initialData.activeSessionId);
+  const [sessionName, setSessionName] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
+  const [sessionNotice, setSessionNotice] = useState('');
+  const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -306,11 +381,19 @@ export default function App() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(timerState));
+      window.localStorage.setItem(
+        APP_STORAGE_KEY,
+        JSON.stringify({
+          timerState,
+          sessions,
+          activeSessionId
+        })
+      );
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(timerState));
     } catch (error) {
       console.warn('Impossible de sauvegarder la session.', error);
     }
-  }, [timerState]);
+  }, [timerState, sessions, activeSessionId]);
 
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
@@ -320,10 +403,85 @@ export default function App() {
     return () => window.clearInterval(tickRef.current);
   }, []);
 
+  const upsertSessionFromTimer = ({ name, sourceTimerState = timerState, forcedId = null, notice = '' }) => {
+    const cleanName = name.trim();
+    if (!cleanName || !sourceTimerState.situations.length) return null;
+
+    const now = Date.now();
+    const nextId = forcedId ?? `session-${now}`;
+    const nextSession = {
+      id: nextId,
+      name: cleanName,
+      situations: sourceTimerState.situations,
+      initialCount: sourceTimerState.situations.length,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    setSessions((prev) => {
+      const idx = prev.findIndex((session) => session.id === nextId);
+      if (idx >= 0) {
+        const existing = prev[idx];
+        const updated = {
+          ...existing,
+          ...nextSession,
+          createdAt: existing.createdAt ?? now
+        };
+        return [updated, ...prev.filter((session) => session.id !== nextId)];
+      }
+      return [nextSession, ...prev];
+    });
+
+    setActiveSessionId(nextId);
+    setSelectedSessionId(nextId);
+    if (notice) setSessionNotice(notice);
+    return nextId;
+  };
+
   const handleLaunch = () => {
     const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
-
     if (!configValues.end) return;
+
+    initialAvgRef.current = null;
+    const now = Date.now();
+    let endAt = parseTimeToToday(configValues.end);
+    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
+
+    const nextTimerState = {
+      isConfigured: true,
+      situations: buildInitialSituations(n),
+      startAt: now,
+      endAt,
+      initialCount: n
+    };
+
+    setTimerState(nextTimerState);
+    setSessionNotice('Nouvelle session lancée. Sauvegardez-la si vous voulez la réutiliser plus tard.');
+  };
+
+  const handleSaveSession = () => {
+    if (!sessionName.trim()) return;
+    upsertSessionFromTimer({
+      name: sessionName,
+      notice: 'Sauvegarde créée avec succès.'
+    });
+    setSessionName('');
+  };
+
+  const handleUpdateSelectedSession = () => {
+    const target = sessions.find((session) => session.id === selectedSessionId);
+    if (!target) return;
+    upsertSessionFromTimer({
+      name: target.name,
+      forcedId: target.id,
+      notice: `Sauvegarde « ${target.name} » mise à jour avec la liste actuelle.`
+    });
+  };
+
+  const handleLoadSession = (sessionId = selectedSessionId) => {
+    if (!sessionId || !configValues.end) return;
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target || !target.situations.length) return;
 
     initialAvgRef.current = null;
     const now = Date.now();
@@ -332,22 +490,33 @@ export default function App() {
 
     setTimerState({
       isConfigured: true,
-      situations: buildInitialSituations(n),
+      situations: target.situations,
       startAt: now,
       endAt,
-      initialCount: n
+      initialCount: target.situations.length
     });
+    setActiveSessionId(target.id);
+    setSelectedSessionId(target.id);
+    setSessionNotice(`Session « ${target.name} » reprise avec une nouvelle heure de fin.`);
+  };
+
+  const handleDeleteSelectedSession = (sessionId = selectedSessionId) => {
+    if (!sessionId) return;
+    const target = sessions.find((session) => session.id === sessionId);
+    setSessions((prev) => prev.filter((session) => session.id !== sessionId));
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(null);
+    }
+    if (selectedSessionId === sessionId) {
+      setSelectedSessionId('');
+    }
+    if (target) {
+      setSessionNotice(`Sauvegarde « ${target.name} » supprimée.`);
+    }
   };
 
   const handleReset = () => {
-    window.localStorage.removeItem(STORAGE_KEY);
-    setTimerState({
-      isConfigured: false,
-      situations: [],
-      startAt: null,
-      endAt: null,
-      initialCount: null
-    });
+    setTimerState(emptyTimerState);
     initialAvgRef.current = null;
     setShowReset(false);
   };
@@ -396,13 +565,11 @@ export default function App() {
     }
   }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
-  const activeCount = useMemo(
-    () => timerState.situations.filter((s) => s.state === 'ACTIVE').length,
-    [timerState.situations]
-  );
-
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
+  const canResumeSession = Boolean(selectedSession && configValues.end);
 
   return (
     <div className="wrap">
@@ -433,7 +600,7 @@ export default function App() {
           <div className="sub">
             1) CADRER Fixons l’heure de fin et le nombre de tâches.
             <br />
-            2) RÉGULER Observez et regulez le diagrame qui s&apos;ajuste en temps réel.
+            2) COOPÉRER Le camembert se met à jour en temps réel.
             <br />
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
@@ -442,6 +609,8 @@ export default function App() {
           🗑️ Nouvelle session
         </button>
       </div>
+
+
 
       {!timerState.isConfigured ? (
         <div id="configView" className="card">
@@ -566,18 +735,127 @@ export default function App() {
         </div>
       )}
 
+
+      <div className="card sessions-panel">
+        <button
+          type="button"
+          className={`sessions-accordion-toggle ${isSessionsPanelOpen ? 'open' : ''}`}
+          onClick={() => setIsSessionsPanelOpen((prev) => !prev)}
+          aria-expanded={isSessionsPanelOpen}
+          aria-controls="sessionsAccordionPanel"
+        >
+          <div className="row" style={{ gap: '10px' }}>
+            <span className="badge blue">💾 Bibliothèque de sessions</span>
+            <span className="badge gray">{sortedSessions.length} sauvegarde{sortedSessions.length > 1 ? 's' : ''}</span>
+          </div>
+          <span className="sessions-chevron">{isSessionsPanelOpen ? '▾' : '▸'}</span>
+        </button>
+
+        <div className="sub" style={{ marginBottom: '8px' }}>
+          {isSessionsPanelOpen
+            ? 'Fermez ce panneau si vous voulez rester concentré sur le timer.'
+            : 'Ouvrir pour sauvegarder, mettre à jour ou reprendre une session existante.'}
+        </div>
+
+        {isSessionsPanelOpen && (
+          <div id="sessionsAccordionPanel">
+            <div className="session-principle">
+              Une sauvegarde contient votre <strong>liste de situations</strong> (noms, états, couleurs).
+              Le <strong>timer</strong> est recréé au moment de la reprise avec une nouvelle heure de fin.
+            </div>
+
+            <div className="grid sessions-layout">
+              <div className="card session-subcard">
+                <div className="col" style={{ gap: '10px' }}>
+                  <label>Créer une nouvelle sauvegarde</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Réunion pilotage"
+                    value={sessionName}
+                    onChange={(event) => setSessionName(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveSession}
+                    disabled={!sessionName.trim() || !timerState.situations.length}
+                  >
+                    Sauvegarder la liste actuelle
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={handleUpdateSelectedSession}
+                    disabled={!selectedSession || !timerState.situations.length}
+                  >
+                    Mettre à jour la sauvegarde sélectionnée
+                  </button>
+                  <div className="sub">Astuce : utilisez “Mettre à jour” quand vous avez retouché les intitulés de la liste.</div>
+                </div>
+              </div>
+
+              <div className="card session-subcard">
+                <div className="col" style={{ gap: '10px' }}>
+                  <label>Reprendre une sauvegarde</label>
+                  <div className="session-list">
+                    {sortedSessions.length === 0 ? (
+                      <div className="session-empty">Aucune sauvegarde pour le moment.</div>
+                    ) : (
+                      sortedSessions.map((session) => {
+                        const isSelected = selectedSessionId === session.id;
+                        const isActive = activeSessionId === session.id;
+                        return (
+                          <button
+                            key={session.id}
+                            type="button"
+                            className={`session-row ${isSelected ? 'selected' : ''}`}
+                            onClick={() => setSelectedSessionId(session.id)}
+                          >
+                            <div className="session-row-main">
+                              <strong>{session.name}</strong>
+                              <span>{session.situations.length} situations · MAJ {formatDateTime(session.updatedAt)}</span>
+                            </div>
+                            {isActive && <span className="badge gray">Active</span>}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="session-action-block">
+                    <button type="button" className="btn-outline" onClick={() => handleLoadSession()} disabled={!canResumeSession}>
+                      Reprendre (heure de fin ci-dessus)
+                    </button>
+                    <button type="button" className="btn-outline danger" onClick={() => handleDeleteSelectedSession()} disabled={!selectedSession}>
+                      Supprimer la sauvegarde sélectionnée
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="sub">
+              {selectedSession
+                ? `Sélection : ${selectedSession.name}. Pour reprendre, renseignez d’abord le champ Heure fin.`
+                : 'Sélectionnez une sauvegarde dans la liste de droite.'}
+            </div>
+            {sessionNotice && <div className="session-notice">{sessionNotice}</div>}
+          </div>
+        )}
+      </div>
+
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">
           <div style={{ fontWeight: 1000, fontSize: '18px', marginBottom: '6px' }}>Confirmer</div>
           <div className="muted" style={{ marginBottom: '14px' }}>
-            Supprimer la session et repartir à zéro ?
+            Réinitialiser la session en cours ? Les sessions sauvegardées restent disponibles.
           </div>
           <div className="row" style={{ gap: '10px' }}>
             <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setShowReset(false)}>
               Annuler
             </button>
             <button type="button" className="btn-danger" style={{ flex: 1 }} onClick={handleReset}>
-              Supprimer
+              Réinitialiser
             </button>
           </div>
         </div>
