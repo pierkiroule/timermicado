@@ -87,6 +87,20 @@ test('normalizeImportedSession trims situation color values', () => {
   assert.equal(normalized.situations[0].color, '#abcdef');
 });
 
+test('normalizeImportedSession normalizes positive weights', () => {
+  const normalized = normalizeImportedSession({
+    name: 'Template Poids',
+    type: 'template',
+    situations: [
+      { id: 1, name: 'A', color: '#111', state: 'ACTIVE', weight: 3 },
+      { id: 2, name: 'B', color: '#222', state: 'ACTIVE', weight: 0 }
+    ]
+  });
+
+  assert.equal(normalized.situations[0].weight, 3);
+  assert.equal(normalized.situations[1].weight, 1);
+});
+
 test('buildTemplateExportPayload builds template payload', () => {
   const session = {
     id: 'session-1',

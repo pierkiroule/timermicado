@@ -61,11 +61,39 @@ const buildInitialSituations = (n) =>
     id: i + 1,
     name: `Situation ${i + 1}`,
     color: COLORS[i % COLORS.length],
-    state: 'ACTIVE'
+    state: 'ACTIVE',
+    weight: 1
   }));
 
+const normalizeSituationWeight = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
+const normalizeSituation = (situation, fallbackIndex = 0) => ({
+  id:
+    typeof situation?.id === 'number' && Number.isFinite(situation.id) && situation.id > 0
+      ? situation.id
+      : fallbackIndex + 1,
+  name:
+    typeof situation?.name === 'string' && situation.name.trim()
+      ? situation.name
+      : `Situation ${fallbackIndex + 1}`,
+  color:
+    typeof situation?.color === 'string' && situation.color.trim()
+      ? situation.color
+      : COLORS[fallbackIndex % COLORS.length],
+  state: situation?.state === 'PAUSE' ? 'PAUSE' : 'ACTIVE',
+  weight: normalizeSituationWeight(situation?.weight)
+});
+
+const getTotalWeight = (situations) =>
+  situations.reduce((sum, situation) => sum + normalizeSituationWeight(situation.weight), 0);
+
 const normalizeState = (data) => {
-  const situations = Array.isArray(data.situations) ? data.situations : [];
+  const situations = Array.isArray(data.situations)
+    ? data.situations.map((situation, index) => normalizeSituation(situation, index))
+    : [];
   const initialCount =
     typeof data.initialCount === 'number' && data.initialCount > 0
       ? data.initialCount
@@ -139,7 +167,9 @@ const createSessionFromTimerState = (timerState, name = 'Session importée') => 
 };
 
 const normalizeSession = (session, index) => {
-  const situations = Array.isArray(session?.situations) ? session.situations : [];
+  const situations = Array.isArray(session?.situations)
+    ? session.situations.map((situation, situationIndex) => normalizeSituation(situation, situationIndex))
+    : [];
   const now = Date.now();
   return {
     id: typeof session?.id === 'string' ? session.id : `session-${now}-${index}`,
@@ -264,10 +294,12 @@ const CompressionPie = ({
   situations,
   startAt,
   endAt,
-  wallNow
+  wallNow,
+  isAdvancedMode
 }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
+  const totalWeight = Math.max(1, getTotalWeight(situations));
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
   const totalMs = Math.max(1, endAt - startAt);
   const elapsedMs = clamp(wallNow - startAt, 0, totalMs);
@@ -276,23 +308,25 @@ const CompressionPie = ({
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
   const remainingAngle = 360 - hatchedAngle;
-  const anglePerSituation = remainingCount > 0 ? remainingAngle / remainingCount : 0;
-
   const slices = [];
   let cursor = -90 + hatchedAngle;
 
-  situations.forEach((sit, index) => {
-    const startAngle = cursor + index * anglePerSituation;
-    const endAngle = startAngle + anglePerSituation;
+  situations.forEach((sit) => {
+    const share = normalizeSituationWeight(sit.weight) / totalWeight;
+    const angleForSituation = remainingAngle * share;
+    const startAngle = cursor;
+    const endAngle = startAngle + angleForSituation;
     const labelPos = describeSliceLabelPosition(120, 120, 83, startAngle, endAngle);
     slices.push({
       id: sit.id,
       path: describeArc(120, 120, 100, startAngle, endAngle),
       color: sit.state === 'PAUSE' ? '#94a3b8' : sit.color,
       state: sit.state,
+      share,
       labelX: labelPos.x,
       labelY: labelPos.y
     });
+    cursor = endAngle;
   });
 
   const hatchedPath =
@@ -390,7 +424,7 @@ const CompressionPie = ({
             dominantBaseline="central"
             className="pie-slice-id"
           >
-            {slice.id}
+            {isAdvancedMode ? `${Math.round(slice.share * 100)}%` : slice.id}
           </text>
         ))}
         <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
@@ -419,7 +453,9 @@ const CompressionPie = ({
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
-        <span className="badge gray">Temps moyen restant : {formatMMSS(avgNowMs)}</span>
+        <span className="badge gray">
+          {isAdvancedMode ? 'Temps moyen (poids égaux)' : 'Temps moyen restant'} : {formatMMSS(avgNowMs)}
+        </span>
         <span className="badge gray">Situations restantes : {remainingCount}</span>
       </div>
     </div>
@@ -694,7 +730,7 @@ export default function App() {
         ...prev,
         situations: [
           ...prev.situations,
-          { id: newId, name: newName, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE' }
+          { id: newId, name: newName, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE', weight: 1 }
         ]
       };
     });
@@ -734,6 +770,19 @@ export default function App() {
     }));
   };
 
+  const adjustSituationWeight = (id, delta) => {
+    setTimerState((prev) => ({
+      ...prev,
+      situations: prev.situations.map((situation) => {
+        if (situation.id !== id) return situation;
+        return {
+          ...situation,
+          weight: Math.max(1, normalizeSituationWeight(situation.weight) + delta)
+        };
+      })
+    }));
+  };
+
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
@@ -742,6 +791,25 @@ export default function App() {
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
   const isAdvancedMode = uiMode === 'advanced';
+  const totalWeight = useMemo(() => getTotalWeight(timerState.situations), [timerState.situations]);
+  const weightedSituationRows = useMemo(
+    () =>
+      timerState.situations.map((situation) => {
+        const weight = normalizeSituationWeight(situation.weight);
+        const share = totalWeight > 0 ? weight / totalWeight : 0;
+        return {
+          id: situation.id,
+          weight,
+          share,
+          remainingMs: remainingGlobalMs * share
+        };
+      }),
+    [timerState.situations, totalWeight, remainingGlobalMs]
+  );
+  const weightedSituationById = useMemo(
+    () => new Map(weightedSituationRows.map((row) => [row.id, row])),
+    [weightedSituationRows]
+  );
   useEffect(() => {
     if (!isStatsModalOpen) return;
 
@@ -1185,6 +1253,7 @@ export default function App() {
                 startAt={timerState.cycleStartAt ?? timerState.startAt}
                 endAt={timerState.endAt}
                 wallNow={wallNow}
+                isAdvancedMode={isAdvancedMode}
               />
               {isAdvancedMode && (
                 <button
@@ -1213,40 +1282,62 @@ export default function App() {
             </div>
 
             <div id="list" className="list">
-              {timerState.situations.map((sit) => (
-                <div
-                  key={sit.id}
-                  className="item"
-                  style={{
-                    background: `${sit.color}10`,
-                    borderColor: sit.state === 'ACTIVE' ? sit.color : 'transparent'
-                  }}
-                >
-                  <div className="col" style={{ gap: '10px' }}>
-                    <div className="row" style={{ gap: '10px', justifyContent: 'space-between' }}>
-                      <div className="row" style={{ gap: '10px' }}>
-                        <div className="dot" style={{ background: sit.color }}></div>
-                        <input
-                          data-name={sit.id}
-                          type="text"
-                          value={sit.name}
-                          onChange={(event) => updateSituationName(sit.id, event.target.value)}
-                        />
+              {timerState.situations.map((sit) => {
+                const weighted = weightedSituationById.get(sit.id);
+                return (
+                  <div
+                    key={sit.id}
+                    className="item"
+                    style={{
+                      background: `${sit.color}10`,
+                      borderColor: sit.state === 'ACTIVE' ? sit.color : 'transparent'
+                    }}
+                  >
+                    <div className="col" style={{ gap: '10px' }}>
+                      <div className="row" style={{ gap: '10px', justifyContent: 'space-between' }}>
+                        <div className="row" style={{ gap: '10px' }}>
+                          <div className="dot" style={{ background: sit.color }}></div>
+                          <input
+                            data-name={sit.id}
+                            type="text"
+                            value={sit.name}
+                            onChange={(event) => updateSituationName(sit.id, event.target.value)}
+                          />
+                        </div>
+                        <div className="row" style={{ gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          {isAdvancedMode && weighted && (
+                            <>
+                              <span className="badge gray">Part : {(weighted.share * 100).toFixed(0)}%</span>
+                              <span className="badge gray">Temps : {formatMMSS(weighted.remainingMs)}</span>
+                            </>
+                          )}
+                          <span className="badge gray">ACTIVE</span>
+                        </div>
                       </div>
-                      <span className="badge gray">ACTIVE</span>
-                    </div>
-                    <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        className="btn-outline danger"
-                        onClick={() => removeSituation(sit.id)}
-                      >
-                        ✕ Supprimer
-                      </button>
+                      <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
+                        {isAdvancedMode && (
+                          <div className="weight-controls" role="group" aria-label={`Poids de ${sit.name}`}>
+                            <button type="button" className="btn-outline" onClick={() => adjustSituationWeight(sit.id, -1)}>
+                              −
+                            </button>
+                            <span className="badge gray">Poids : {weighted?.weight ?? 1}</span>
+                            <button type="button" className="btn-outline" onClick={() => adjustSituationWeight(sit.id, 1)}>
+                              +
+                            </button>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-outline danger"
+                          onClick={() => removeSituation(sit.id)}
+                        >
+                          ✕ Supprimer
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
