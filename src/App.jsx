@@ -8,6 +8,7 @@ import {
 
 const LEGACY_STORAGE_KEY = 'micado_timer_ultra_robust_v2';
 const APP_STORAGE_KEY = 'micado_timer_sessions_v1';
+const UI_MODE_STORAGE_KEY = 'micado_timer_ui_mode_v1';
 
 const COLORS = [
   '#6366f1',
@@ -71,6 +72,7 @@ const normalizeState = (data) => {
       : situations.length || 1;
   const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
   const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
+  const cycleStartAt = Number.isFinite(data.cycleStartAt) ? data.cycleStartAt : startAt;
   const isConfigured =
     Boolean(data.isConfigured) &&
     situations.length > 0 &&
@@ -86,6 +88,7 @@ const normalizeState = (data) => {
     situations,
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
+    cycleStartAt: isConfigured ? cycleStartAt : null,
     initialCount,
     isPaused,
     pausedAt
@@ -97,6 +100,7 @@ const emptyTimerState = {
   situations: [],
   startAt: null,
   endAt: null,
+  cycleStartAt: null,
   initialCount: null,
   isPaused: false,
   pausedAt: null
@@ -208,6 +212,16 @@ const loadAppState = () => {
   }
 };
 
+const loadUiMode = () => {
+  try {
+    const raw = window.localStorage.getItem(UI_MODE_STORAGE_KEY);
+    return raw === 'advanced' ? 'advanced' : 'simple';
+  } catch (error) {
+    console.warn('Impossible de charger le mode d’interface.', error);
+    return 'simple';
+  }
+};
+
 const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
   const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
 
@@ -250,15 +264,14 @@ const CompressionPie = ({
   situations,
   startAt,
   endAt,
-  wallNow,
-  initialAvgMs
+  wallNow
 }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const tempoScore =
-    initialAvgMs && remainingCount > 0 ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
+  const totalMs = Math.max(1, endAt - startAt);
+  const elapsedMs = clamp(wallNow - startAt, 0, totalMs);
+  const compression = clamp(elapsedMs / totalMs, 0, 1);
   const pressureEmoji =
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
@@ -415,7 +428,9 @@ const CompressionPie = ({
 
 export default function App() {
   const initialData = useMemo(() => loadAppState(), []);
+  const initialUiMode = useMemo(() => loadUiMode(), []);
   const [timerState, setTimerState] = useState(initialData.timerState);
+  const [uiMode, setUiMode] = useState(initialUiMode);
   const [sessions, setSessions] = useState(initialData.sessions);
   const [activeSessionId, setActiveSessionId] = useState(initialData.activeSessionId);
   const [sessionName, setSessionName] = useState('');
@@ -424,8 +439,6 @@ export default function App() {
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [sessionEvents, setSessionEvents] = useState([]);
-  const [endAdjustments, setEndAdjustments] = useState([]);
-  const [pressureHistory, setPressureHistory] = useState([]);
   const [finishConfirmArmed, setFinishConfirmArmed] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
@@ -434,11 +447,9 @@ export default function App() {
     end: ''
   });
   const tickRef = useRef(null);
-  const initialAvgRef = useRef(null);
   const importInputRef = useRef(null);
   const statsCloseButtonRef = useRef(null);
   const endLoggedRef = useRef(false);
-  const analyticsSvgRef = useRef(null);
   const finishConfirmTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -456,6 +467,14 @@ export default function App() {
       console.warn('Impossible de sauvegarder la session.', error);
     }
   }, [timerState, sessions, activeSessionId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UI_MODE_STORAGE_KEY, uiMode);
+    } catch (error) {
+      console.warn('Impossible de sauvegarder le mode d’interface.', error);
+    }
+  }, [uiMode]);
 
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
@@ -504,7 +523,6 @@ export default function App() {
     const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
     if (!configValues.end) return;
 
-    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -514,14 +532,13 @@ export default function App() {
       situations: buildInitialSituations(n),
       startAt: now,
       endAt,
+      cycleStartAt: now,
       initialCount: n,
       isPaused: false,
       pausedAt: null
     };
 
     setTimerState(nextTimerState);
-    setEndAdjustments([]);
-    setPressureHistory([]);
     setFinishConfirmArmed(false);
     setSessionEvents([
       {
@@ -559,7 +576,6 @@ export default function App() {
     const target = sessions.find((session) => session.id === sessionId);
     if (!target || !target.situations.length) return;
 
-    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -569,14 +585,13 @@ export default function App() {
       situations: target.situations,
       startAt: now,
       endAt,
+      cycleStartAt: now,
       initialCount: target.situations.length,
       isPaused: false,
       pausedAt: null
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
-    setEndAdjustments([]);
-    setPressureHistory([]);
     setFinishConfirmArmed(false);
     setSessionEvents([
       {
@@ -617,17 +632,6 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadFile = (filename, content, mimeType) => {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
 
   const handleExportTemplate = () => {
     if (!selectedSession) return;
@@ -635,158 +639,6 @@ export default function App() {
     const slug = selectedSession.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     downloadJsonFile(`${slug || 'template-session'}.template.json`, payload);
     setSessionNotice(`Template « ${selectedSession.name} » exporté.`);
-  };
-
-  const handleExportAnalyticsPng = () => {
-    if (!isFinished || !analyticsSvgRef.current) return;
-
-    const svg = analyticsSvgRef.current;
-    const serializer = new XMLSerializer();
-    const svgString = serializer.serializeToString(svg);
-    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    const slug = (selectedSession?.name || 'deroule-reunion')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-
-    img.onload = () => {
-      const eventRowsHeight = Math.max(220, orderedEvents.length * 30 + 60);
-      const canvas = document.createElement('canvas');
-      canvas.width = 1300;
-      canvas.height = 520 + eventRowsHeight;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.drawImage(img, 30, 24, 480, 480);
-
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 30px ui-sans-serif, system-ui';
-      ctx.fillText('Rapport de synthèse — Déroulé réunion', 540, 70);
-
-      ctx.font = '18px ui-sans-serif, system-ui';
-      ctx.fillStyle = '#cbd5e1';
-      reportSummaryLines.forEach((line, index) => {
-        ctx.fillText(`• ${line}`, 540, 120 + index * 34);
-      });
-
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 22px ui-sans-serif, system-ui';
-      ctx.fillText('Légende des événements', 540, 265);
-
-      ctx.font = '16px ui-sans-serif, system-ui';
-      eventLegendEntries.forEach((entry, index) => {
-        const col = index % 2;
-        const row = Math.floor(index / 2);
-        const x = 540 + col * 320;
-        const y = 300 + row * 34;
-        ctx.fillStyle = EVENT_COLORS[entry.type] ?? '#38bdf8';
-        ctx.beginPath();
-        ctx.arc(x, y - 5, 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#e2e8f0';
-        ctx.fillText(entry.label, x + 16, y);
-      });
-
-      const listStartY = 520;
-      ctx.fillStyle = '#f8fafc';
-      ctx.font = 'bold 22px ui-sans-serif, system-ui';
-      ctx.fillText('Chronologie des événements', 30, listStartY);
-
-      ctx.font = '15px ui-sans-serif, system-ui';
-      orderedEvents.forEach((event, index) => {
-        const y = listStartY + 38 + index * 30;
-        ctx.fillStyle = EVENT_COLORS[event.type] ?? '#38bdf8';
-        ctx.beginPath();
-        ctx.arc(38, y - 5, 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#e2e8f0';
-        const label = EVENT_LABELS[event.type] ?? event.type;
-        const line = `${formatDateTime(event.at)} · ${label} · ${event.description}`;
-        ctx.fillText(line, 54, y);
-      });
-
-      const pngUrl = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = pngUrl;
-      a.download = `${slug || 'deroule-reunion'}.analytics.png`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setSessionNotice('Rapport visuel PNG exporté.');
-    };
-
-    img.src = url;
-  };
-
-  const buildAnalyticsTextReport = () => {
-    const lines = [
-      'Rapport de synthèse — Déroulé réunion',
-      `Progression: ${(analyticsPieData.progressRatio * 100).toFixed(0)}%`,
-      `Temps écoulé: ${formatMMSS(analyticsPieData.elapsedMs)}`,
-      `Temps restant: ${formatMMSS(analyticsPieData.remainingMs)}`,
-      `Événements: ${analyticsPieData.eventCount}`,
-      '',
-      'Chronologie des événements:'
-    ];
-
-    orderedEvents.forEach((event) => {
-      lines.push(`${formatDateTime(event.at)} | ${EVENT_LABELS[event.type] ?? event.type} | ${event.description}`);
-    });
-
-    return lines.join('\n');
-  };
-
-  const buildAnalyticsXlsContent = () => {
-    const header = [
-      ['Section', 'Clé', 'Valeur'].join('\t'),
-      ['Résumé', 'Progression (%)', (analyticsPieData.progressRatio * 100).toFixed(0)].join('\t'),
-      ['Résumé', 'Temps écoulé', formatMMSS(analyticsPieData.elapsedMs)].join('\t'),
-      ['Résumé', 'Temps restant', formatMMSS(analyticsPieData.remainingMs)].join('\t'),
-      ['Résumé', 'Événements', String(analyticsPieData.eventCount)].join('\t'),
-      '',
-      ['Événements', 'Horodatage', 'Type', 'Description'].join('\t')
-    ];
-
-    const rows = orderedEvents.map((event) => [
-      'Événements',
-      formatDateTime(event.at),
-      EVENT_LABELS[event.type] ?? event.type,
-      event.description
-    ].join('\t'));
-
-    return [...header, ...rows].join('\n');
-  };
-
-  const handleExportAnalyticsText = () => {
-    if (!isFinished) return;
-    const slug = (selectedSession?.name || 'deroule-reunion')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    downloadFile(`${slug || 'deroule-reunion'}.analytics.txt`, buildAnalyticsTextReport(), 'text/plain;charset=utf-8');
-    setSessionNotice('Rapport texte exporté.');
-  };
-
-  const handleExportAnalyticsXls = () => {
-    if (!isFinished) return;
-    const slug = (selectedSession?.name || 'deroule-reunion')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    downloadFile(
-      `${slug || 'deroule-reunion'}.analytics.xls`,
-      buildAnalyticsXlsContent(),
-      'application/vnd.ms-excel;charset=utf-8'
-    );
-    setSessionNotice('Rapport tableur (.xls) exporté.');
   };
 
   const handleImportClick = () => {
@@ -828,10 +680,7 @@ export default function App() {
   const handleReset = () => {
     setTimerState(emptyTimerState);
     setSessionEvents([]);
-    setEndAdjustments([]);
-    setPressureHistory([]);
     setFinishConfirmArmed(false);
-    initialAvgRef.current = null;
     endLoggedRef.current = false;
     setShowReset(false);
   };
@@ -885,13 +734,6 @@ export default function App() {
     }));
   };
 
-  useEffect(() => {
-    const baselineCount = timerState.initialCount ?? timerState.situations.length;
-    if (!initialAvgRef.current && timerState.startAt && timerState.endAt && baselineCount > 0) {
-      const totalInitialMs = timerState.endAt - timerState.startAt;
-      initialAvgRef.current = totalInitialMs / baselineCount;
-    }
-  }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
@@ -899,6 +741,7 @@ export default function App() {
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+  const isAdvancedMode = uiMode === 'advanced';
   useEffect(() => {
     if (!isStatsModalOpen) return;
 
@@ -928,80 +771,6 @@ export default function App() {
     endLoggedRef.current = true;
   }, [timerState.isConfigured, isFinished]);
 
-  useEffect(() => {
-    if (!timerState.isConfigured || !timerState.startAt || !timerState.endAt || isFinished) return;
-
-    const hasBaseline = Number.isFinite(initialAvgRef.current) && initialAvgRef.current > 0;
-    const remainingCount = timerState.situations.length;
-    const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-    const tempoScore = hasBaseline && remainingCount > 0 ? (avgNowMs - initialAvgRef.current) / initialAvgRef.current : 0;
-    const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
-
-    const now = Date.now();
-    setPressureHistory((prev) => {
-      const next = [...prev, { at: now, pressure: compression }];
-      return next.slice(-120);
-    });
-  }, [timerState.isConfigured, timerState.startAt, timerState.endAt, timerState.situations.length, remainingGlobalMs, isFinished]);
-
-  const analyticsPieData = useMemo(() => {
-    if (!timerState.isConfigured || !timerState.startAt || !timerState.endAt) {
-      return {
-        progressRatio: 0,
-        eventBubbles: [],
-        remainingMs: 0,
-        elapsedMs: 0,
-        totalMs: 0,
-        pauseCount: 0,
-        eventCount: 0
-      };
-    }
-
-    const totalMs = Math.max(1, timerState.endAt - timerState.startAt);
-    const elapsedMs = Math.max(0, Math.min(totalMs, wallNow - timerState.startAt));
-    const progressRatio = clamp(elapsedMs / totalMs, 0, 1);
-    const remainingMs = Math.max(0, timerState.endAt - wallNow);
-    const pauseCount = sessionEvents.filter((event) => event.type === 'PAUSE_START').length;
-
-    const eventBubbles = sessionEvents
-      .filter((event) => Number.isFinite(event.at))
-      .map((event, index) => {
-        const ratio = clamp((event.at - timerState.startAt) / totalMs, 0, 1);
-        const angle = -90 + ratio * 360;
-        const radius = 118 + (index % 2) * 12;
-        const coords = polarToCartesian(120, 120, radius, angle);
-        return {
-          id: event.id,
-          type: event.type,
-          title: EVENT_LABELS[event.type] ?? event.type,
-          description: event.description,
-          at: event.at,
-          color: EVENT_COLORS[event.type] ?? '#38bdf8',
-          x: coords.x,
-          y: coords.y,
-          r: 6 + (index % 3)
-        };
-      });
-
-    return {
-      progressRatio,
-      eventBubbles,
-      remainingMs,
-      elapsedMs,
-      totalMs,
-      pauseCount,
-      eventCount: sessionEvents.length
-    };
-  }, [timerState.isConfigured, timerState.startAt, timerState.endAt, wallNow, sessionEvents]);
-
-  const reportSummaryLines = useMemo(() => {
-    if (!timerState.isConfigured) return [];
-    return [
-      `Progression: ${(analyticsPieData.progressRatio * 100).toFixed(0)}% de la réunion.`,
-      `Événements suivis: ${analyticsPieData.eventCount} (${analyticsPieData.pauseCount} pause${analyticsPieData.pauseCount > 1 ? 's' : ''}).`,
-      `Situations actives en fin d'étape: ${timerState.situations.length}.`
-    ];
-  }, [timerState.isConfigured, analyticsPieData, timerState.situations.length]);
 
   const eventLegendEntries = useMemo(
     () => [
@@ -1021,6 +790,21 @@ export default function App() {
     [sessionEvents]
   );
 
+  const timelineEvents = useMemo(
+    () =>
+      orderedEvents.map((event, index) => ({
+        ...event,
+        color: EVENT_COLORS[event.type] ?? '#38bdf8',
+        label: EVENT_LABELS[event.type] ?? event.type,
+        offsetLabel:
+          timerState.startAt && Number.isFinite(event.at)
+            ? `+${Math.max(0, Math.round((event.at - timerState.startAt) / 60000))} min`
+            : '',
+        order: index + 1
+      })),
+    [orderedEvents, timerState.startAt]
+  );
+
   useEffect(
     () => () => {
       if (finishConfirmTimeoutRef.current) {
@@ -1030,33 +814,6 @@ export default function App() {
     []
   );
 
-  const pressureSeries = useMemo(() => {
-    if (!timerState.startAt || !timerState.endAt || pressureHistory.length === 0) {
-      return [];
-    }
-    const totalMs = Math.max(1, timerState.endAt - timerState.startAt);
-    return pressureHistory.map((point) => {
-      const x = clamp(((point.at - timerState.startAt) / totalMs) * 100, 0, 100);
-      return { ...point, x, y: 100 - point.pressure * 100 };
-    });
-  }, [pressureHistory, timerState.startAt, timerState.endAt]);
-
-  const pressurePath = useMemo(() => {
-    if (pressureSeries.length === 0) return '';
-    return pressureSeries
-      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-      .join(' ');
-  }, [pressureSeries]);
-
-  const pressureExtremes = useMemo(() => {
-    if (pressureSeries.length === 0) {
-      return { peak: null, relax: null };
-    }
-    const peak = pressureSeries.reduce((max, point) => (point.pressure > max.pressure ? point : max), pressureSeries[0]);
-    const relax = pressureSeries.reduce((min, point) => (point.pressure < min.pressure ? point : min), pressureSeries[0]);
-    return { peak, relax };
-  }, [pressureSeries]);
-
   const meetingStats = useMemo(() => {
     const startAt = timerState.startAt;
     if (!startAt) {
@@ -1064,7 +821,10 @@ export default function App() {
         actualEndAt: null,
         plannedEndAt: null,
         totalDurationMs: 0,
-        situationDurations: []
+        situationDurations: [],
+        pauseCount: 0,
+        totalPauseMs: 0,
+        eventCount: orderedEvents.length
       };
     }
 
@@ -1075,7 +835,19 @@ export default function App() {
 
     const removedAtMap = new Map();
     const addedNames = new Set();
+    let pauseCount = 0;
+    let totalPauseMs = 0;
+    let pauseStartAt = null;
+
     orderedEvents.forEach((event) => {
+      if (event.type === 'PAUSE_START') {
+        pauseCount += 1;
+        pauseStartAt = event.at;
+      }
+      if (event.type === 'PAUSE_END' && pauseStartAt) {
+        totalPauseMs += Math.max(0, event.at - pauseStartAt);
+        pauseStartAt = null;
+      }
       if (event.type === 'SITUATION_ADDED' && typeof event.description === 'string') {
         const parts = event.description.split(':');
         const name = (parts[1] || '').trim();
@@ -1090,6 +862,10 @@ export default function App() {
 
     const knownNames = new Set(timerState.situations.map((situation) => situation.name));
     addedNames.forEach((name) => knownNames.add(name));
+
+    if (pauseStartAt) {
+      totalPauseMs += Math.max(0, actualEndAt - pauseStartAt);
+    }
 
     const situationDurations = [...knownNames]
       .filter(Boolean)
@@ -1108,9 +884,40 @@ export default function App() {
       actualEndAt,
       plannedEndAt,
       totalDurationMs,
-      situationDurations
+      situationDurations,
+      pauseCount,
+      totalPauseMs,
+      eventCount: orderedEvents.length
     };
   }, [timerState.startAt, timerState.endAt, timerState.situations, orderedEvents, isFinished, wallNow]);
+
+
+  const analyticsRows = useMemo(
+    () => [
+      `Heure de début : ${formatDateTime(timerState.startAt)}`,
+      `Heure de fin fixée : ${formatDateTime(meetingStats.plannedEndAt)}`,
+      `Heure réelle (jusqu'ici) : ${formatDateTime(meetingStats.actualEndAt)}`,
+      `Durée écoulée : ${formatMMSS(meetingStats.totalDurationMs)}`,
+      `Temps restant : ${formatMMSS(remainingGlobalMs)}`,
+      `Situations actives : ${timerState.situations.length}`,
+      `Événements capturés : ${meetingStats.eventCount}`,
+      `Nombre de pauses : ${meetingStats.pauseCount}`,
+      `Durée totale des pauses : ${formatMMSS(meetingStats.totalPauseMs)}`,
+      `Réunion terminée : ${isFinished ? 'Oui' : 'Non'}`
+    ],
+    [
+      timerState.startAt,
+      meetingStats.plannedEndAt,
+      meetingStats.actualEndAt,
+      meetingStats.totalDurationMs,
+      meetingStats.eventCount,
+      meetingStats.pauseCount,
+      meetingStats.totalPauseMs,
+      remainingGlobalMs,
+      timerState.situations.length,
+      isFinished
+    ]
+  );
 
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
@@ -1165,35 +972,37 @@ export default function App() {
   const handleAdjustEndTime = () => {
     if (!timerState.isConfigured || !configValues.end) return;
 
+    const previousEndTime = Number.isFinite(timerState.endAt)
+      ? new Date(timerState.endAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : null;
+
     const now = Date.now();
     let nextEndAt = parseTimeToToday(configValues.end);
     if (nextEndAt <= now) nextEndAt += 24 * 60 * 60 * 1000;
 
     setTimerState((prev) => ({
       ...prev,
-      endAt: nextEndAt
+      endAt: nextEndAt,
+      cycleStartAt: now
     }));
     const eventAt = Date.now();
-    setEndAdjustments((prev) => [
-      ...prev,
-      {
-        id: `end-change-${eventAt}`,
-        at: eventAt,
-        value: configValues.end,
-        endAt: nextEndAt
-      }
-    ]);
     setSessionEvents((prev) => [
       ...prev,
       {
         id: `evt-${eventAt}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'END_TIME_CHANGED',
         at: eventAt,
-        description: `Heure de fin modifiée à ${configValues.end}.`
+        description: previousEndTime
+          ? `Heure de fin ajustée : ${previousEndTime} → ${configValues.end}.`
+          : `Heure de fin ajustée à ${configValues.end}.`
       }
     ]);
     endLoggedRef.current = false;
-    setSessionNotice(`Heure de fin mise à jour à ${configValues.end}.`);
+    setSessionNotice(
+      previousEndTime
+        ? `Heure de fin ajustée de ${previousEndTime} à ${configValues.end}. L'horloge continue sans interruption.`
+        : `Nouvelle heure de fin appliquée : ${configValues.end}. L'horloge continue sans interruption.`
+    );
   };
 
   return (
@@ -1230,33 +1039,58 @@ export default function App() {
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
-        <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="col topbar-controls" style={{ gap: '10px', alignItems: 'stretch', width: '100%' }}>
           {timerState.isConfigured && (
-            <>
-              <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
-                {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+            <div className="mode-switch" role="group" aria-label="Mode d'interface">
+              <button
+                type="button"
+                className={`mode-chip ${uiMode === 'simple' ? 'active' : ''}`}
+                onClick={() => setUiMode('simple')}
+                aria-pressed={uiMode === 'simple'}
+              >
+                ⚡ Simplifié
               </button>
               <button
                 type="button"
-                className="btn-outline"
-                style={{ width: 'auto' }}
-                onClick={handleFinishMeeting}
-                disabled={isFinished}
+                className={`mode-chip ${uiMode === 'advanced' ? 'active' : ''}`}
+                onClick={() => setUiMode('advanced')}
+                aria-pressed={uiMode === 'advanced'}
               >
-                {finishConfirmArmed
-                  ? '⚠️ Confirmer maintenant : mettre fin à la réunion'
-                  : '✅ Mettre fin à la réunion (avant l\'heure de fin fixée)'}
+                🛠 Avancé
               </button>
-              {timerState.isPaused && (
-                <span className="pause-live" aria-live="polite">
-                  Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
-                </span>
-              )}
-            </>
+            </div>
           )}
-          <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
-            🆕 Créer une nouvelle réunion
-          </button>
+
+          <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {timerState.isConfigured && (
+              <>
+                <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
+                  {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+                </button>
+                {isAdvancedMode && (
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ width: 'auto' }}
+                    onClick={handleFinishMeeting}
+                    disabled={isFinished}
+                  >
+                    {finishConfirmArmed
+                      ? '⚠️ Confirmer maintenant : mettre fin à la réunion'
+                      : "✅ Mettre fin à la réunion (avant l'heure de fin fixée)"}
+                  </button>
+                )}
+                {timerState.isPaused && (
+                  <span className="pause-live" aria-live="polite">
+                    Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
+                  </span>
+                )}
+              </>
+            )}
+            <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
+              🆕 Créer une nouvelle réunion
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1319,41 +1153,51 @@ export default function App() {
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
-              <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
-                <input
-                  id="runEndEdit"
-                  type="time"
-                  value={configValues.end}
-                  onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
-                  aria-label="Modifier l'heure de fin"
-                  style={{ maxWidth: '180px' }}
-                />
+              {isAdvancedMode && (
+                <div className="col end-time-adjust" style={{ gap: '8px' }}>
+                  <label htmlFor="runEndEdit">Ajuster l'heure de fin en cours de réunion</label>
+                  <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      id="runEndEdit"
+                      type="time"
+                      value={configValues.end}
+                      onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
+                      aria-label="Nouvelle heure de fin visée"
+                      style={{ maxWidth: '180px' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={handleAdjustEndTime}
+                      disabled={!configValues.end || isFinished}
+                    >
+                      Appliquer la nouvelle heure de fin
+                    </button>
+                  </div>
+                  <div className="sub">
+                    Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
+                    Le camembert se reconfigure à partir de maintenant ; seule l&apos;échéance est recalculée.
+                  </div>
+                </div>
+              )}
+              <CompressionPie
+                situations={timerState.situations}
+                startAt={timerState.cycleStartAt ?? timerState.startAt}
+                endAt={timerState.endAt}
+                wallNow={wallNow}
+              />
+              {isAdvancedMode && (
                 <button
                   type="button"
                   className="btn-outline"
-                  onClick={handleAdjustEndTime}
-                  disabled={!configValues.end || isFinished}
+                  onClick={() => setIsStatsModalOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-controls="liveStatsModal"
+                  aria-expanded={isStatsModalOpen}
                 >
-                  Modifier l'heure de fin fixée précédemment
+                  📊 Stats live
                 </button>
-              </div>
-              <CompressionPie
-                situations={timerState.situations}
-                startAt={timerState.startAt}
-                endAt={timerState.endAt}
-                wallNow={wallNow}
-                initialAvgMs={initialAvgRef.current}
-              />
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setIsStatsModalOpen(true)}
-                aria-haspopup="dialog"
-                aria-controls="liveStatsModal"
-                aria-expanded={isStatsModalOpen}
-              >
-                📊 Stats live
-              </button>
+              )}
             </div>
           </div>
 
@@ -1409,7 +1253,8 @@ export default function App() {
       )}
 
 
-      <div className="card sessions-panel">
+      {isAdvancedMode && (
+        <div className="card sessions-panel">
         <button
           type="button"
           className={`sessions-accordion-toggle ${isSessionsPanelOpen ? 'open' : ''}`}
@@ -1529,6 +1374,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">
@@ -1547,19 +1393,20 @@ export default function App() {
         </div>
       </div>
 
-      <div
-        id="liveStatsModal"
-        className={`modal ${isStatsModalOpen ? 'show' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="liveStatsModalTitle"
-      >
+      {isAdvancedMode && (
+        <div
+          id="liveStatsModal"
+          className={`modal ${isStatsModalOpen ? 'show' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="liveStatsModalTitle"
+        >
         <div className="box live-stats-box">
           <div className="row-between" style={{ marginBottom: '12px' }}>
             <div>
               <div id="liveStatsModalTitle" style={{ fontWeight: 1000, fontSize: '18px' }}>Déroulé réunion en cours</div>
               <div className="muted" style={{ marginTop: '4px' }}>
-                Timeline circulaire des événements + rapport visuel en construction.
+                Chronologie verticale et synthèse de réunion.
               </div>
             </div>
             <button
@@ -1573,202 +1420,55 @@ export default function App() {
             </button>
           </div>
 
-          <div className="live-analytics-layout">
-            <section className="live-stats-section" aria-label="Camembert temporel des événements">
-              <svg
-                ref={analyticsSvgRef}
-                width="480"
-                height="480"
-                viewBox="0 0 240 240"
-                role="img"
-                aria-label="Camembert du déroulé de réunion avec événements"
-                className="analytics-pie"
-              >
-                <defs>
-                  <linearGradient id="analytics-progress-gradient" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#38bdf8" />
-                    <stop offset="100%" stopColor="#818cf8" />
-                  </linearGradient>
-                </defs>
-                <circle cx="120" cy="120" r="100" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
-                {analyticsPieData.progressRatio > 0 && (
-                  <path
-                    d={describeArc(120, 120, 100, -90, -90 + analyticsPieData.progressRatio * 360)}
-                    fill="url(#analytics-progress-gradient)"
-                    opacity="0.88"
-                  />
-                )}
-                <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
-                <text x="120" y="108" textAnchor="middle" className="pie-emoji">
-                  {isFinished ? '🏁' : timerState.isPaused ? '⏸️' : '▶️'}
-                </text>
-                <text x="120" y="138" textAnchor="middle" className="pie-value">
-                  {(analyticsPieData.progressRatio * 100).toFixed(0)}%
-                </text>
-                {analyticsPieData.eventBubbles.map((event) => (
-                  <g key={event.id}>
-                    <circle cx={event.x} cy={event.y} r={event.r} fill={event.color} stroke="#0f172a" strokeWidth="1.2">
-                      <title>
-                        {`${event.title} • ${formatDateTime(event.at)}\n${event.description}`}
-                      </title>
-                    </circle>
-                  </g>
-                ))}
-              </svg>
-              <div className="pie-meta">
-                <span className="badge gray">Temps écoulé : {formatMMSS(analyticsPieData.elapsedMs)}</span>
-                <span className="badge gray">Temps restant : {formatMMSS(analyticsPieData.remainingMs)}</span>
-                <span className="badge gray">Événements : {analyticsPieData.eventCount}</span>
-              </div>
-            </section>
-
-            <section className="live-stats-section" aria-label="Rapport de synthèse en construction">
-              <h3>Rapport de synthèse (en construction)</h3>
-              <ul className="live-report-list">
-                {reportSummaryLines.map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </ul>
-
-              <div className="meeting-facts-grid" aria-label="Données chiffrées de réunion">
-                <div className="meeting-fact-item">
-                  <span>Heure de début</span>
-                  <strong>{formatDateTime(timerState.startAt)}</strong>
-                </div>
-                <div className="meeting-fact-item">
-                  <span>Heure de fin fixée</span>
-                  <strong>{formatDateTime(meetingStats.plannedEndAt)}</strong>
-                </div>
-                <div className="meeting-fact-item">
-                  <span>Heure de fin réelle</span>
-                  <strong>{formatDateTime(meetingStats.actualEndAt)}</strong>
-                </div>
-                <div className="meeting-fact-item">
-                  <span>Durée globale</span>
-                  <strong>{formatMMSS(meetingStats.totalDurationMs)}</strong>
-                </div>
-              </div>
-
-              <div className="end-change-list" aria-label="Historique des modifications de fin">
-                <div className="sub" style={{ marginBottom: '4px' }}><strong>Horaires de fin modifiés</strong></div>
-                {endAdjustments.length === 0 ? (
-                  <div className="sub">Aucune modification.</div>
-                ) : (
-                  endAdjustments.map((entry) => (
-                    <div className="sub" key={entry.id}>{formatDateTime(entry.at)} → {entry.value}</div>
-                  ))
-                )}
-              </div>
-
-              <div className="pressure-chart-wrap" aria-label="Courbe de pression au cours de la réunion">
-                <div className="sub" style={{ marginBottom: '4px' }}><strong>Courbe de pression</strong></div>
-                <svg viewBox="0 0 100 100" className="pressure-chart" role="img" aria-label="Courbe de pression avec pics et creux">
-                  <rect x="0" y="0" width="100" height="100" fill="rgba(15,23,42,.2)" />
-                  <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
-                  <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
-                  <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
-                  {pressurePath && <path d={pressurePath} fill="none" stroke="#38bdf8" strokeWidth="1.8" />}
-                  {pressureExtremes.peak && (
-                    <g>
-                      <circle cx={pressureExtremes.peak.x} cy={pressureExtremes.peak.y} r="2.2" fill="#ef4444" />
-                      <title>{`Pic tension ${Math.round(pressureExtremes.peak.pressure * 100)}%`}</title>
-                    </g>
-                  )}
-                  {pressureExtremes.relax && (
-                    <g>
-                      <circle cx={pressureExtremes.relax.x} cy={pressureExtremes.relax.y} r="2.2" fill="#22c55e" />
-                      <title>{`Pic relax ${Math.round(pressureExtremes.relax.pressure * 100)}%`}</title>
-                    </g>
-                  )}
-                </svg>
-                <div className="sub">
-                  {pressureExtremes.peak
-                    ? `Pic de tension : ${Math.round(pressureExtremes.peak.pressure * 100)}% (${formatDateTime(pressureExtremes.peak.at)})`
-                    : 'Pic de tension : indisponible'}
-                </div>
-                <div className="sub">
-                  {pressureExtremes.relax
-                    ? `Pic de relax : ${Math.round(pressureExtremes.relax.pressure * 100)}% (${formatDateTime(pressureExtremes.relax.at)})`
-                    : 'Pic de relax : indisponible'}
-                </div>
-              </div>
-
-              <div className="duration-ranking" aria-label="Classement des situations par durée décroissante">
-                <div className="sub" style={{ marginBottom: '4px' }}><strong>Situations classées par durée</strong></div>
-                {meetingStats.situationDurations.length === 0 ? (
-                  <div className="sub">Aucune situation.</div>
-                ) : (
-                  meetingStats.situationDurations.map((item) => (
-                    <div className="duration-row" key={`${item.id}-${item.name}`}>
-                      <span>{item.name}</span>
-                      <strong>{formatMMSS(item.durationMs)}</strong>
+          <div className="live-stats-section" aria-label="Chronologie verticale de la réunion">
+            <h3>Déroulé vertical</h3>
+            <div className="timeline-note">Lecture du haut vers le bas, comme un bâtonnet de mikado.</div>
+            <div className="mikado-timeline" role="list" aria-label="Chronologie des événements">
+              {timelineEvents.length === 0 ? (
+                <div className="sub">Aucun événement enregistré pour le moment.</div>
+              ) : (
+                timelineEvents.map((event) => (
+                  <div key={event.id} className="mikado-row" role="listitem">
+                    <div className="mikado-left" aria-hidden="true">
+                      <span className="mikado-node" style={{ backgroundColor: event.color }}></span>
                     </div>
-                  ))
-                )}
-              </div>
-
-              <div className="event-legend" aria-label="Légende des événements">
-                {eventLegendEntries.map((entry) => (
-                  <span key={entry.type} className="event-legend-item">
-                    <span className="event-dot" style={{ backgroundColor: EVENT_COLORS[entry.type] }}></span>
-                    {entry.label}
-                  </span>
-                ))}
-              </div>
-
-              <div className="event-feed" aria-label="Événements détectés pendant la réunion">
-                {orderedEvents.length === 0 ? (
-                  <div className="sub">Aucun événement enregistré pour le moment.</div>
-                ) : (
-                  orderedEvents.map((event) => (
-                    <div key={event.id} className="event-feed-row">
-                      <span className="event-dot" style={{ backgroundColor: EVENT_COLORS[event.type] }}></span>
-                      <div>
-                        <strong>{EVENT_LABELS[event.type] ?? event.type}</strong>
-                        <div className="sub" style={{ marginTop: '2px' }}>
-                          {formatDateTime(event.at)} · {event.description}
-                        </div>
+                    <div className="mikado-content">
+                      <div className="mikado-title" style={{ color: event.color }}>
+                        {event.order}. {event.label}
                       </div>
+                      <div className="sub" style={{ marginTop: '2px' }}>
+                        {formatDateTime(event.at)} {event.offsetLabel ? `· ${event.offsetLabel}` : ''}
+                      </div>
+                      <div className="mikado-description">{event.description}</div>
                     </div>
-                  ))
-                )}
-              </div>
+                  </div>
+                ))
+              )}
+            </div>
 
-              <div className="sub">
-                {isFinished
-                  ? 'La réunion est terminée : vous pouvez exporter le rapport visuel en PNG.'
-                  : 'Export PNG disponible uniquement à la fin de la réunion.'}
-              </div>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleExportAnalyticsPng}
-                disabled={!isFinished}
-              >
-                Exporter le rapport visuel (.png)
-              </button>
-              <div className="row" style={{ gap: '8px' }}>
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={handleExportAnalyticsText}
-                  disabled={!isFinished}
-                >
-                  Export texte (.txt)
-                </button>
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={handleExportAnalyticsXls}
-                  disabled={!isFinished}
-                >
-                  Export tableur (.xls)
-                </button>
-              </div>
-            </section>
+            <div className="event-legend" aria-label="Légende des événements">
+              {eventLegendEntries.map((entry) => (
+                <span key={entry.type} className="event-legend-item">
+                  <span className="event-dot" style={{ backgroundColor: EVENT_COLORS[entry.type] }}></span>
+                  {entry.label}
+                </span>
+              ))}
+            </div>
+
+            <h3>Indicateurs de réunion</h3>
+            <table className="indicators-table" aria-label="Indicateurs pertinents de la réunion">
+              <tbody>
+                {analyticsRows.map((row) => (
+                  <tr key={row}>
+                    <td>{row}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
