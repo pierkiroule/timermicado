@@ -859,6 +859,18 @@ export default function App() {
     ]);
   };
 
+  const handleFinishMeeting = () => {
+    if (!timerState.isConfigured || isFinished) return;
+    endLoggedRef.current = false;
+    setTimerState((prev) => ({
+      ...prev,
+      endAt: Date.now(),
+      isPaused: false,
+      pausedAt: null
+    }));
+    setSessionNotice('Réunion marquée comme terminée. Le rapport final est maintenant disponible.');
+  };
+
   return (
     <div className="wrap">
       <div className="topbar">
@@ -899,6 +911,15 @@ export default function App() {
               <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
                 {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
               </button>
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: 'auto' }}
+                onClick={handleFinishMeeting}
+                disabled={isFinished}
+              >
+                ✅ Réunion terminée
+              </button>
               {timerState.isPaused && (
                 <span className="pause-live" aria-live="polite">
                   Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
@@ -907,7 +928,7 @@ export default function App() {
             </>
           )}
           <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
-            🗑️ Nouvelle session
+            🆕 Créer une nouvelle réunion
           </button>
         </div>
       </div>
@@ -1168,14 +1189,14 @@ export default function App() {
         <div className="box">
           <div style={{ fontWeight: 1000, fontSize: '18px', marginBottom: '6px' }}>Confirmer</div>
           <div className="muted" style={{ marginBottom: '14px' }}>
-            Réinitialiser la session en cours ? Les sessions sauvegardées restent disponibles.
+            Créer une nouvelle réunion ? La réunion en cours sera fermée, les sauvegardes resteront disponibles.
           </div>
           <div className="row" style={{ gap: '10px' }}>
             <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={() => setShowReset(false)}>
               Annuler
             </button>
             <button type="button" className="btn-danger" style={{ flex: 1 }} onClick={handleReset}>
-              Réinitialiser
+              Créer
             </button>
           </div>
         </div>
