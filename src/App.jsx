@@ -1012,6 +1012,21 @@ export default function App() {
     setSessionNotice('Réunion marquée comme terminée. Le rapport final est maintenant disponible.');
   };
 
+  const handleAdjustEndTime = () => {
+    if (!timerState.isConfigured || !configValues.end) return;
+
+    const now = Date.now();
+    let nextEndAt = parseTimeToToday(configValues.end);
+    if (nextEndAt <= now) nextEndAt += 24 * 60 * 60 * 1000;
+
+    setTimerState((prev) => ({
+      ...prev,
+      endAt: nextEndAt
+    }));
+    endLoggedRef.current = false;
+    setSessionNotice(`Heure de fin mise à jour à ${configValues.end}.`);
+  };
+
   return (
     <div className="wrap">
       <div className="topbar">
@@ -1059,7 +1074,7 @@ export default function App() {
                 onClick={handleFinishMeeting}
                 disabled={isFinished}
               >
-                ✅ Réunion terminée
+                ✅ Mettre fin à la réunion (avant l'heure de fin fixée)
               </button>
               {timerState.isPaused && (
                 <span className="pause-live" aria-live="polite">
@@ -1132,6 +1147,24 @@ export default function App() {
                 Le camembert représente la compression temporelle instantanée et la répartition actuelle.
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
+              </div>
+              <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
+                <input
+                  id="runEndEdit"
+                  type="time"
+                  value={configValues.end}
+                  onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
+                  aria-label="Modifier l'heure de fin"
+                  style={{ maxWidth: '180px' }}
+                />
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={handleAdjustEndTime}
+                  disabled={!configValues.end || isFinished}
+                >
+                  Modifier l'heure de fin fixée précédemment
+                </button>
               </div>
               <CompressionPie
                 situations={timerState.situations}
