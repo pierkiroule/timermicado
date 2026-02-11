@@ -72,6 +72,7 @@ const normalizeState = (data) => {
       : situations.length || 1;
   const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
   const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
+  const cycleStartAt = Number.isFinite(data.cycleStartAt) ? data.cycleStartAt : startAt;
   const isConfigured =
     Boolean(data.isConfigured) &&
     situations.length > 0 &&
@@ -87,6 +88,7 @@ const normalizeState = (data) => {
     situations,
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
+    cycleStartAt: isConfigured ? cycleStartAt : null,
     initialCount,
     isPaused,
     pausedAt
@@ -98,6 +100,7 @@ const emptyTimerState = {
   situations: [],
   startAt: null,
   endAt: null,
+  cycleStartAt: null,
   initialCount: null,
   isPaused: false,
   pausedAt: null
@@ -529,6 +532,7 @@ export default function App() {
       situations: buildInitialSituations(n),
       startAt: now,
       endAt,
+      cycleStartAt: now,
       initialCount: n,
       isPaused: false,
       pausedAt: null
@@ -581,6 +585,7 @@ export default function App() {
       situations: target.situations,
       startAt: now,
       endAt,
+      cycleStartAt: now,
       initialCount: target.situations.length,
       isPaused: false,
       pausedAt: null
@@ -977,7 +982,8 @@ export default function App() {
 
     setTimerState((prev) => ({
       ...prev,
-      endAt: nextEndAt
+      endAt: nextEndAt,
+      cycleStartAt: now
     }));
     const eventAt = Date.now();
     setSessionEvents((prev) => [
@@ -1170,13 +1176,13 @@ export default function App() {
                   </div>
                   <div className="sub">
                     Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
-                    Le timer continue ; seule l&apos;échéance est recalculée.
+                    Le camembert se reconfigure à partir de maintenant ; seule l&apos;échéance est recalculée.
                   </div>
                 </div>
               )}
               <CompressionPie
                 situations={timerState.situations}
-                startAt={timerState.startAt}
+                startAt={timerState.cycleStartAt ?? timerState.startAt}
                 endAt={timerState.endAt}
                 wallNow={wallNow}
               />
