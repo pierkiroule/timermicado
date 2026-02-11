@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildSessionReportText,
-  buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
   normalizeImportedSession,
@@ -74,64 +72,4 @@ test('buildTemplateExportPayload builds template payload', () => {
   assert.equal(payload.type, 'template');
   assert.equal(payload.schemaVersion, 1);
   assert.equal(payload.name, 'Réunion staff');
-});
-
-test('buildSessionReportPayload builds report payload with KPIs', () => {
-  const session = {
-    id: 'session-99',
-    name: 'Staff hebdo',
-    initialCount: 4,
-    situations: [
-      { id: 1, name: 'A', color: '#000', state: 'ACTIVE' },
-      { id: 2, name: ' ', color: '#111', state: 'PAUSE' }
-    ],
-    createdAt: 123,
-    updatedAt: 456
-  };
-
-  const payload = buildSessionReportPayload(session);
-  assert.equal(payload.type, 'report');
-  assert.equal(payload.schemaVersion, 1);
-  assert.equal(payload.session.name, 'Staff hebdo');
-  assert.equal(payload.session.currentCount, 2);
-  assert.equal(payload.kpis.namedSituationsCount, 1);
-  assert.equal(payload.kpis.activeSituationsCount, 1);
-});
-
-test('buildSessionReportPayload falls back safely when metadata is missing', () => {
-  const payload = buildSessionReportPayload({
-    situations: [{ id: 1, name: 'A', color: '#000', state: 'ACTIVE' }]
-  });
-
-  assert.equal(payload.type, 'report');
-  assert.equal(payload.session.name, 'Session sans nom');
-  assert.equal(payload.session.initialCount, 1);
-  assert.equal(payload.session.currentCount, 1);
-  assert.equal(payload.kpis.coverageRatio, 1);
-});
-
-test('buildSessionReportText returns readable plain text report', () => {
-  const text = buildSessionReportText({
-    generatedAt: 1700000000000,
-    session: {
-      id: 'session-1',
-      name: 'Réunion staff',
-      createdAt: 1700000000000,
-      updatedAt: 1700003600000,
-      initialCount: 5,
-      currentCount: 4
-    },
-    kpis: {
-      coverageRatio: 0.8,
-      namingRatio: 0.75,
-      activeRatio: 0.5,
-      namedSituationsCount: 3,
-      activeSituationsCount: 2
-    }
-  });
-
-  assert.equal(text.includes('Rapport de synthèse — Timer MICADO'), true);
-  assert.equal(text.includes('- Nom : Réunion staff'), true);
-  assert.equal(text.includes('- Couverture de la liste : 80%'), true);
-  assert.equal(text.includes('- Situations actives : 50%'), true);
 });

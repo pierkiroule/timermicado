@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  buildSessionReportText,
-  buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
   normalizeImportedSession,
@@ -102,6 +100,24 @@ const emptyTimerState = {
   initialCount: null,
   isPaused: false,
   pausedAt: null
+};
+
+const EVENT_COLORS = {
+  SESSION_START: '#38bdf8',
+  PAUSE_START: '#f59e0b',
+  PAUSE_END: '#22c55e',
+  SITUATION_ADDED: '#8b5cf6',
+  SITUATION_REMOVED: '#ef4444',
+  SESSION_FINISHED: '#ec4899'
+};
+
+const EVENT_LABELS = {
+  SESSION_START: 'Démarrage de la réunion',
+  PAUSE_START: 'Début de pause',
+  PAUSE_END: 'Reprise de la réunion',
+  SITUATION_ADDED: 'Situation ajoutée',
+  SITUATION_REMOVED: 'Situation supprimée',
+  SESSION_FINISHED: 'Fin de réunion'
 };
 
 const createSessionFromTimerState = (timerState, name = 'Session importée') => {
@@ -404,8 +420,8 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
   const [sessionNotice, setSessionNotice] = useState('');
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
-  const [isSessionSummaryOpen, setIsSessionSummaryOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
+  const [sessionEvents, setSessionEvents] = useState([]);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -416,6 +432,8 @@ export default function App() {
   const initialAvgRef = useRef(null);
   const importInputRef = useRef(null);
   const statsCloseButtonRef = useRef(null);
+  const endLoggedRef = useRef(false);
+  const analyticsSvgRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -496,6 +514,15 @@ export default function App() {
     };
 
     setTimerState(nextTimerState);
+    setSessionEvents([
+      {
+        id: `evt-${now}`,
+        type: 'SESSION_START',
+        at: now,
+        description: 'Réunion démarrée.'
+      }
+    ]);
+    endLoggedRef.current = false;
     setSessionNotice('Nouvelle session lancée. Sauvegardez-la si vous voulez la réutiliser plus tard.');
   };
 
@@ -569,18 +596,6 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadTextFile = (filename, content) => {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
-
   const handleExportTemplate = () => {
     if (!selectedSession) return;
     const payload = buildTemplateExportPayload(selectedSession);
@@ -589,13 +604,44 @@ export default function App() {
     setSessionNotice(`Template « ${selectedSession.name} » exporté.`);
   };
 
-  const handleExportSessionReport = () => {
-    if (!selectedSession || !isFinished) return;
-    const payload = buildSessionReportPayload(selectedSession);
-    const reportText = buildSessionReportText(payload);
-    const slug = selectedSession.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    downloadTextFile(`${slug || 'session'}.report.txt`, reportText);
-    setSessionNotice(`Rapport de synthèse « ${selectedSession.name} » exporté.`);
+  const handleExportAnalyticsPng = () => {
+    if (!isFinished || !analyticsSvgRef.current) return;
+
+    const svg = analyticsSvgRef.current;
+    const serializer = new XMLSerializer();
+    const svgString = serializer.serializeToString(svg);
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    const slug = (selectedSession?.name || 'deroule-reunion')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 520;
+      canvas.height = 520;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 20, 20, 480, 480);
+      const pngUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = pngUrl;
+      a.download = `${slug || 'deroule-reunion'}.analytics.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setSessionNotice('Rapport visuel PNG exporté.');
+    };
+
+    img.src = url;
   };
 
   const handleImportClick = () => {
@@ -636,11 +682,14 @@ export default function App() {
 
   const handleReset = () => {
     setTimerState(emptyTimerState);
+    setSessionEvents([]);
     initialAvgRef.current = null;
+    endLoggedRef.current = false;
     setShowReset(false);
   };
 
   const addSituation = () => {
+    const now = Date.now();
     setTimerState((prev) => {
       const newId = Math.max(0, ...prev.situations.map((s) => s.id)) + 1;
       return {
@@ -651,13 +700,33 @@ export default function App() {
         ]
       };
     });
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'SITUATION_ADDED',
+        at: now,
+        description: 'Une situation a été ajoutée.'
+      }
+    ]);
   };
 
   const removeSituation = (id) => {
+    const now = Date.now();
+    const target = timerState.situations.find((s) => s.id === id);
     setTimerState((prev) => ({
       ...prev,
       situations: prev.situations.filter((s) => s.id !== id)
     }));
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'SITUATION_REMOVED',
+        at: now,
+        description: `Situation supprimée${target?.name ? ` : ${target.name}` : '.'}`
+      }
+    ]);
   };
 
   const updateSituationName = (id, value) => {
@@ -681,38 +750,6 @@ export default function App() {
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
-  const selectedSessionSituations = Array.isArray(selectedSession?.situations) ? selectedSession.situations : [];
-  const selectedSessionInitialCount =
-    typeof selectedSession?.initialCount === 'number' && selectedSession.initialCount > 0
-      ? selectedSession.initialCount
-      : null;
-  const hasSelectedSessionCompleteData = Boolean(selectedSession) && selectedSessionInitialCount !== null;
-  const namedSituationsCount = selectedSessionSituations.filter(
-    (situation) => typeof situation?.name === 'string' && situation.name.trim().length > 0
-  ).length;
-  const activeSituationsCount = selectedSessionSituations.filter((situation) => situation?.state === 'ACTIVE').length;
-  const sessionCoverageRatio = selectedSessionInitialCount
-    ? clamp(selectedSessionSituations.length / selectedSessionInitialCount, 0, 1)
-    : 0;
-  const namingRatio = selectedSessionSituations.length > 0 ? namedSituationsCount / selectedSessionSituations.length : 0;
-  const activityRatio = selectedSessionSituations.length > 0 ? activeSituationsCount / selectedSessionSituations.length : 0;
-  const liveStats = useMemo(() => {
-    const remainingCount = timerState.situations.length;
-    const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-    const hasBaseline = Number.isFinite(initialAvgRef.current) && initialAvgRef.current > 0;
-    const tempoScore = hasBaseline && remainingCount > 0 ? (avgNowMs - initialAvgRef.current) / initialAvgRef.current : 0;
-    const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
-    const pressureLabel = compression < 0.34 ? 'Pression basse' : compression < 0.67 ? 'Pression modérée' : 'Pression élevée';
-
-    return {
-      compression,
-      pressureLabel,
-      tempoScore,
-      remainingCount,
-      avgNowMs
-    };
-  }, [timerState.situations.length, remainingGlobalMs]);
-
   useEffect(() => {
     if (!isStatsModalOpen) return;
 
@@ -727,15 +764,99 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isStatsModalOpen]);
 
+  useEffect(() => {
+    if (!timerState.isConfigured || !isFinished || endLoggedRef.current) return;
+    const now = Date.now();
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'SESSION_FINISHED',
+        at: now,
+        description: 'Réunion terminée.'
+      }
+    ]);
+    endLoggedRef.current = true;
+  }, [timerState.isConfigured, isFinished]);
+
+  const analyticsPieData = useMemo(() => {
+    if (!timerState.isConfigured || !timerState.startAt || !timerState.endAt) {
+      return {
+        progressRatio: 0,
+        eventBubbles: [],
+        remainingMs: 0,
+        elapsedMs: 0,
+        totalMs: 0,
+        pauseCount: 0,
+        eventCount: 0
+      };
+    }
+
+    const totalMs = Math.max(1, timerState.endAt - timerState.startAt);
+    const elapsedMs = Math.max(0, Math.min(totalMs, wallNow - timerState.startAt));
+    const progressRatio = clamp(elapsedMs / totalMs, 0, 1);
+    const remainingMs = Math.max(0, timerState.endAt - wallNow);
+    const pauseCount = sessionEvents.filter((event) => event.type === 'PAUSE_START').length;
+
+    const eventBubbles = sessionEvents
+      .filter((event) => Number.isFinite(event.at))
+      .map((event, index) => {
+        const ratio = clamp((event.at - timerState.startAt) / totalMs, 0, 1);
+        const angle = -90 + ratio * 360;
+        const radius = 118 + (index % 2) * 12;
+        const coords = polarToCartesian(120, 120, radius, angle);
+        return {
+          id: event.id,
+          type: event.type,
+          title: EVENT_LABELS[event.type] ?? event.type,
+          description: event.description,
+          at: event.at,
+          color: EVENT_COLORS[event.type] ?? '#38bdf8',
+          x: coords.x,
+          y: coords.y,
+          r: 6 + (index % 3)
+        };
+      });
+
+    return {
+      progressRatio,
+      eventBubbles,
+      remainingMs,
+      elapsedMs,
+      totalMs,
+      pauseCount,
+      eventCount: sessionEvents.length
+    };
+  }, [timerState.isConfigured, timerState.startAt, timerState.endAt, wallNow, sessionEvents]);
+
+  const reportSummaryLines = useMemo(() => {
+    if (!timerState.isConfigured) return [];
+    return [
+      `Progression: ${(analyticsPieData.progressRatio * 100).toFixed(0)}% de la réunion.`,
+      `Événements suivis: ${analyticsPieData.eventCount} (${analyticsPieData.pauseCount} pause${analyticsPieData.pauseCount > 1 ? 's' : ''}).`,
+      `Situations actives en fin d'étape: ${timerState.situations.length}.`
+    ];
+  }, [timerState.isConfigured, analyticsPieData, timerState.situations.length]);
+
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
 
     const now = Date.now();
+    const nextType = timerState.isPaused ? 'PAUSE_END' : 'PAUSE_START';
     setTimerState((prev) => ({
       ...prev,
       isPaused: !prev.isPaused,
       pausedAt: prev.isPaused ? null : now
     }));
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: nextType,
+        at: now,
+        description: nextType === 'PAUSE_START' ? 'Pause lancée.' : 'Réunion reprise.'
+      }
+    ]);
   };
 
   return (
@@ -1012,11 +1133,6 @@ export default function App() {
                     <button type="button" className="btn-outline" onClick={handleExportTemplate} disabled={!selectedSession}>
                       Partager la liste (template)
                     </button>
-                    {isFinished && (
-                      <button type="button" className="btn-outline" onClick={handleExportSessionReport} disabled={!selectedSession}>
-                        Partager rapport de synthèse (.txt)
-                      </button>
-                    )}
                     <button type="button" className="btn-outline" onClick={handleImportClick}>
                       Importer un template
                     </button>
@@ -1048,91 +1164,6 @@ export default function App() {
         )}
       </div>
 
-      <div className="card sessions-panel">
-        <button
-          type="button"
-          className={`sessions-accordion-toggle ${isSessionSummaryOpen ? 'open' : ''}`}
-          onClick={() => setIsSessionSummaryOpen((prev) => !prev)}
-          aria-expanded={isSessionSummaryOpen}
-          aria-controls="sessionSummaryAccordionPanel"
-        >
-          <div className="row" style={{ gap: '10px' }}>
-            <span className="badge blue">📈 Synthèse sessions</span>
-            <span className="badge gray">{selectedSession ? selectedSession.name : 'Aucune sélection'}</span>
-          </div>
-          <span className="sessions-chevron">{isSessionSummaryOpen ? '▾' : '▸'}</span>
-        </button>
-
-        <div className="sub" style={{ marginBottom: '8px' }}>
-          {isSessionSummaryOpen
-            ? 'Vue synthétique de la sauvegarde sélectionnée dans la bibliothèque.'
-            : 'Ouvrir pour afficher des KPIs et ratios rapides par session.'}
-        </div>
-
-        {isSessionSummaryOpen && (
-          <div id="sessionSummaryAccordionPanel">
-            {sortedSessions.length === 0 ? (
-              <div className="session-empty">Aucune session disponible pour la synthèse.</div>
-            ) : !selectedSession ? (
-              <div className="session-empty">Sélectionnez d’abord une session dans la bibliothèque.</div>
-            ) : !hasSelectedSessionCompleteData ? (
-              <div className="session-empty">
-                Données incomplètes pour « {selectedSession.name} » : taille initiale indisponible.
-              </div>
-            ) : (
-              <>
-                <div className="summary-kpi-grid">
-                  <div className="summary-kpi-item">
-                    <span className="summary-kpi-label">Situations actuelles</span>
-                    <strong>{selectedSessionSituations.length}</strong>
-                  </div>
-                  <div className="summary-kpi-item">
-                    <span className="summary-kpi-label">Plan initial</span>
-                    <strong>{selectedSessionInitialCount}</strong>
-                  </div>
-                  <div className="summary-kpi-item">
-                    <span className="summary-kpi-label">Dernière mise à jour</span>
-                    <strong>{formatDateTime(selectedSession.updatedAt)}</strong>
-                  </div>
-                </div>
-
-                <div className="summary-bars" aria-label="Visualisation synthétique de la session">
-                  <div className="summary-bar-row">
-                    <div className="summary-bar-head">
-                      <span>Couverture de la liste</span>
-                      <strong>{(sessionCoverageRatio * 100).toFixed(0)}%</strong>
-                    </div>
-                    <div className="summary-bar-track">
-                      <div className="summary-bar-fill" style={{ width: `${sessionCoverageRatio * 100}%` }}></div>
-                    </div>
-                  </div>
-
-                  <div className="summary-bar-row">
-                    <div className="summary-bar-head">
-                      <span>Intitulés renseignés</span>
-                      <strong>{(namingRatio * 100).toFixed(0)}%</strong>
-                    </div>
-                    <div className="summary-bar-track">
-                      <div className="summary-bar-fill" style={{ width: `${namingRatio * 100}%` }}></div>
-                    </div>
-                  </div>
-
-                  <div className="summary-bar-row">
-                    <div className="summary-bar-head">
-                      <span>Situations actives</span>
-                      <strong>{(activityRatio * 100).toFixed(0)}%</strong>
-                    </div>
-                    <div className="summary-bar-track">
-                      <div className="summary-bar-fill" style={{ width: `${activityRatio * 100}%` }}></div>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">
           <div style={{ fontWeight: 1000, fontSize: '18px', marginBottom: '6px' }}>Confirmer</div>
@@ -1160,9 +1191,9 @@ export default function App() {
         <div className="box live-stats-box">
           <div className="row-between" style={{ marginBottom: '12px' }}>
             <div>
-              <div id="liveStatsModalTitle" style={{ fontWeight: 1000, fontSize: '18px' }}>Stats live</div>
+              <div id="liveStatsModalTitle" style={{ fontWeight: 1000, fontSize: '18px' }}>Déroulé réunion en cours</div>
               <div className="muted" style={{ marginTop: '4px' }}>
-                Vue rapide pour suivre le rythme sans surcharger l’écran principal.
+                Timeline circulaire des événements + rapport visuel en construction.
               </div>
             </div>
             <button
@@ -1176,28 +1207,75 @@ export default function App() {
             </button>
           </div>
 
-          <div className="live-stats-grid">
-            <section className="live-stats-section" aria-label="Pression temporelle">
-              <h3>Pression temporelle</h3>
-              <p className="live-stats-value">{(liveStats.compression * 100).toFixed(0)}%</p>
-              <p className="muted">{liveStats.pressureLabel}</p>
-              <p className="muted">
-                Écart vs plan moyen : {(liveStats.tempoScore * 100).toFixed(0)}%
-              </p>
+          <div className="live-analytics-layout">
+            <section className="live-stats-section" aria-label="Camembert temporel des événements">
+              <svg
+                ref={analyticsSvgRef}
+                width="480"
+                height="480"
+                viewBox="0 0 240 240"
+                role="img"
+                aria-label="Camembert du déroulé de réunion avec événements"
+                className="analytics-pie"
+              >
+                <defs>
+                  <linearGradient id="analytics-progress-gradient" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="100%" stopColor="#818cf8" />
+                  </linearGradient>
+                </defs>
+                <circle cx="120" cy="120" r="100" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="2" />
+                {analyticsPieData.progressRatio > 0 && (
+                  <path
+                    d={describeArc(120, 120, 100, -90, -90 + analyticsPieData.progressRatio * 360)}
+                    fill="url(#analytics-progress-gradient)"
+                    opacity="0.88"
+                  />
+                )}
+                <circle cx="120" cy="120" r="64" fill="#fff" stroke="#e2e8f0" strokeWidth="2" />
+                <text x="120" y="108" textAnchor="middle" className="pie-emoji">
+                  {isFinished ? '🏁' : timerState.isPaused ? '⏸️' : '▶️'}
+                </text>
+                <text x="120" y="138" textAnchor="middle" className="pie-value">
+                  {(analyticsPieData.progressRatio * 100).toFixed(0)}%
+                </text>
+                {analyticsPieData.eventBubbles.map((event) => (
+                  <g key={event.id}>
+                    <circle cx={event.x} cy={event.y} r={event.r} fill={event.color} stroke="#0f172a" strokeWidth="1.2">
+                      <title>
+                        {`${event.title} • ${formatDateTime(event.at)}\n${event.description}`}
+                      </title>
+                    </circle>
+                  </g>
+                ))}
+              </svg>
+              <div className="pie-meta">
+                <span className="badge gray">Temps écoulé : {formatMMSS(analyticsPieData.elapsedMs)}</span>
+                <span className="badge gray">Temps restant : {formatMMSS(analyticsPieData.remainingMs)}</span>
+                <span className="badge gray">Événements : {analyticsPieData.eventCount}</span>
+              </div>
             </section>
 
-            <section className="live-stats-section" aria-label="Cadence">
-              <h3>Cadence</h3>
-              <p className="live-stats-value">{liveStats.remainingCount} situation{liveStats.remainingCount > 1 ? 's' : ''}</p>
-              <p className="muted">Temps global restant : {formatMMSS(remainingGlobalMs)}</p>
-              <p className="muted">Temps moyen restant : {formatMMSS(liveStats.avgNowMs)}</p>
-            </section>
-
-            <section className="live-stats-section" aria-label="Pauses">
-              <h3>Pauses</h3>
-              <p className="live-stats-value">{timerState.isPaused ? 'En pause' : 'Session active'}</p>
-              <p className="muted">Durée pause en cours : {formatMMSS(currentPauseMs)}</p>
-              <p className="muted">Fin prévue : {formatDateTime(timerState.endAt)}</p>
+            <section className="live-stats-section" aria-label="Rapport de synthèse en construction">
+              <h3>Rapport de synthèse (en construction)</h3>
+              <ul className="live-report-list">
+                {reportSummaryLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+              <div className="sub">
+                {isFinished
+                  ? 'La réunion est terminée : vous pouvez exporter le rapport visuel en PNG.'
+                  : 'Export PNG disponible uniquement à la fin de la réunion.'}
+              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleExportAnalyticsPng}
+                disabled={!isFinished}
+              >
+                Exporter le rapport visuel (.png)
+              </button>
             </section>
           </div>
         </div>
