@@ -838,6 +838,23 @@ export default function App() {
     ];
   }, [timerState.isConfigured, analyticsPieData, timerState.situations.length]);
 
+  const eventLegendEntries = useMemo(
+    () => [
+      { type: 'SESSION_START', label: EVENT_LABELS.SESSION_START },
+      { type: 'PAUSE_START', label: EVENT_LABELS.PAUSE_START },
+      { type: 'PAUSE_END', label: EVENT_LABELS.PAUSE_END },
+      { type: 'SITUATION_ADDED', label: EVENT_LABELS.SITUATION_ADDED },
+      { type: 'SITUATION_REMOVED', label: EVENT_LABELS.SITUATION_REMOVED },
+      { type: 'SESSION_FINISHED', label: EVENT_LABELS.SESSION_FINISHED }
+    ],
+    []
+  );
+
+  const orderedEvents = useMemo(
+    () => [...sessionEvents].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
+    [sessionEvents]
+  );
+
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
 
@@ -1284,6 +1301,34 @@ export default function App() {
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+
+              <div className="event-legend" aria-label="Légende des événements">
+                {eventLegendEntries.map((entry) => (
+                  <span key={entry.type} className="event-legend-item">
+                    <span className="event-dot" style={{ backgroundColor: EVENT_COLORS[entry.type] }}></span>
+                    {entry.label}
+                  </span>
+                ))}
+              </div>
+
+              <div className="event-feed" aria-label="Événements détectés pendant la réunion">
+                {orderedEvents.length === 0 ? (
+                  <div className="sub">Aucun événement enregistré pour le moment.</div>
+                ) : (
+                  orderedEvents.map((event) => (
+                    <div key={event.id} className="event-feed-row">
+                      <span className="event-dot" style={{ backgroundColor: EVENT_COLORS[event.type] }}></span>
+                      <div>
+                        <strong>{EVENT_LABELS[event.type] ?? event.type}</strong>
+                        <div className="sub" style={{ marginTop: '2px' }}>
+                          {formatDateTime(event.at)} · {event.description}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
               <div className="sub">
                 {isFinished
                   ? 'La réunion est terminée : vous pouvez exporter le rapport visuel en PNG.'
