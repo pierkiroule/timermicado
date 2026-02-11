@@ -108,3 +108,38 @@ export const buildTemplateExportPayload = (session) => ({
   situations: session.situations
 });
 
+export const buildSessionReportPayload = (session) => {
+  const situations = Array.isArray(session?.situations) ? session.situations : [];
+  const initialCount =
+    typeof session?.initialCount === 'number' && session.initialCount > 0
+      ? session.initialCount
+      : situations.length;
+  const namedSituationsCount = situations.filter(
+    (situation) => typeof situation?.name === 'string' && situation.name.trim().length > 0
+  ).length;
+  const activeSituationsCount = situations.filter((situation) => situation?.state === 'ACTIVE').length;
+  const coverageRatio = initialCount > 0 ? Math.min(1, situations.length / initialCount) : 0;
+  const namingRatio = situations.length > 0 ? namedSituationsCount / situations.length : 0;
+  const activeRatio = situations.length > 0 ? activeSituationsCount / situations.length : 0;
+
+  return {
+    schemaVersion: TEMPLATE_SCHEMA_VERSION,
+    type: 'report',
+    generatedAt: Date.now(),
+    session: {
+      id: session?.id ?? null,
+      name: session?.name ?? 'Session sans nom',
+      createdAt: Number.isFinite(session?.createdAt) ? session.createdAt : null,
+      updatedAt: Number.isFinite(session?.updatedAt) ? session.updatedAt : null,
+      initialCount,
+      currentCount: situations.length
+    },
+    kpis: {
+      coverageRatio,
+      namingRatio,
+      activeRatio,
+      namedSituationsCount,
+      activeSituationsCount
+    }
+  };
+};

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
   normalizeImportedSession,
@@ -72,4 +73,26 @@ test('buildTemplateExportPayload builds template payload', () => {
   assert.equal(payload.type, 'template');
   assert.equal(payload.schemaVersion, 1);
   assert.equal(payload.name, 'Réunion staff');
+});
+
+test('buildSessionReportPayload builds report payload with KPIs', () => {
+  const session = {
+    id: 'session-99',
+    name: 'Staff hebdo',
+    initialCount: 4,
+    situations: [
+      { id: 1, name: 'A', color: '#000', state: 'ACTIVE' },
+      { id: 2, name: ' ', color: '#111', state: 'PAUSE' }
+    ],
+    createdAt: 123,
+    updatedAt: 456
+  };
+
+  const payload = buildSessionReportPayload(session);
+  assert.equal(payload.type, 'report');
+  assert.equal(payload.schemaVersion, 1);
+  assert.equal(payload.session.name, 'Staff hebdo');
+  assert.equal(payload.session.currentCount, 2);
+  assert.equal(payload.kpis.namedSituationsCount, 1);
+  assert.equal(payload.kpis.activeSituationsCount, 1);
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
   normalizeImportedSession,
@@ -575,6 +576,14 @@ export default function App() {
     setSessionNotice(`Template « ${selectedSession.name} » exporté.`);
   };
 
+  const handleExportSessionReport = () => {
+    if (!selectedSession) return;
+    const payload = buildSessionReportPayload(selectedSession);
+    const slug = selectedSession.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    downloadJsonFile(`${slug || 'session'}.report.json`, payload);
+    setSessionNotice(`Rapport de synthèse « ${selectedSession.name} » exporté.`);
+  };
+
   const handleImportClick = () => {
     importInputRef.current?.click();
   };
@@ -988,6 +997,9 @@ export default function App() {
                   <div className="session-action-block">
                     <button type="button" className="btn-outline" onClick={handleExportTemplate} disabled={!selectedSession}>
                       Partager la liste (template)
+                    </button>
+                    <button type="button" className="btn-outline" onClick={handleExportSessionReport} disabled={!selectedSession}>
+                      Partager rapport de synthèse
                     </button>
                     <button type="button" className="btn-outline" onClick={handleImportClick}>
                       Importer un template
