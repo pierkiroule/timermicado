@@ -269,7 +269,7 @@ const CompressionPie = ({
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
   const tempoScore =
     initialAvgMs && remainingCount > 0 ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
+  const compression = remainingCount === 0 ? 0 : clamp(Math.abs(tempoScore), 0, 1);
   const pressureEmoji =
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
@@ -407,7 +407,7 @@ const CompressionPie = ({
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
-          {(compression * 100).toFixed(0)}%
+          {(compression * 100).toFixed(1)}%
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
