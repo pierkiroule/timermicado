@@ -402,6 +402,7 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
   const [sessionNotice, setSessionNotice] = useState('');
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
+  const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -411,6 +412,7 @@ export default function App() {
   const tickRef = useRef(null);
   const initialAvgRef = useRef(null);
   const importInputRef = useRef(null);
+  const statsCloseButtonRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -655,6 +657,36 @@ export default function App() {
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+  const liveStats = useMemo(() => {
+    const remainingCount = timerState.situations.length;
+    const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
+    const hasBaseline = Number.isFinite(initialAvgRef.current) && initialAvgRef.current > 0;
+    const tempoScore = hasBaseline && remainingCount > 0 ? (avgNowMs - initialAvgRef.current) / initialAvgRef.current : 0;
+    const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
+    const pressureLabel = compression < 0.34 ? 'Pression basse' : compression < 0.67 ? 'Pression modérée' : 'Pression élevée';
+
+    return {
+      compression,
+      pressureLabel,
+      tempoScore,
+      remainingCount,
+      avgNowMs
+    };
+  }, [timerState.situations.length, remainingGlobalMs]);
+
+  useEffect(() => {
+    if (!isStatsModalOpen) return;
+
+    statsCloseButtonRef.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setIsStatsModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isStatsModalOpen]);
 
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
@@ -786,6 +818,16 @@ export default function App() {
                 wallNow={wallNow}
                 initialAvgMs={initialAvgRef.current}
               />
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => setIsStatsModalOpen(true)}
+                aria-haspopup="dialog"
+                aria-controls="liveStatsModal"
+                aria-expanded={isStatsModalOpen}
+              >
+                📊 Stats live
+              </button>
             </div>
           </div>
 
@@ -975,6 +1017,59 @@ export default function App() {
             <button type="button" className="btn-danger" style={{ flex: 1 }} onClick={handleReset}>
               Réinitialiser
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        id="liveStatsModal"
+        className={`modal ${isStatsModalOpen ? 'show' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="liveStatsModalTitle"
+      >
+        <div className="box live-stats-box">
+          <div className="row-between" style={{ marginBottom: '12px' }}>
+            <div>
+              <div id="liveStatsModalTitle" style={{ fontWeight: 1000, fontSize: '18px' }}>Stats live</div>
+              <div className="muted" style={{ marginTop: '4px' }}>
+                Vue rapide pour suivre le rythme sans surcharger l’écran principal.
+              </div>
+            </div>
+            <button
+              ref={statsCloseButtonRef}
+              type="button"
+              className="btn-outline"
+              onClick={() => setIsStatsModalOpen(false)}
+              aria-label="Fermer les statistiques live"
+            >
+              Fermer
+            </button>
+          </div>
+
+          <div className="live-stats-grid">
+            <section className="live-stats-section" aria-label="Pression temporelle">
+              <h3>Pression temporelle</h3>
+              <p className="live-stats-value">{(liveStats.compression * 100).toFixed(0)}%</p>
+              <p className="muted">{liveStats.pressureLabel}</p>
+              <p className="muted">
+                Écart vs plan moyen : {(liveStats.tempoScore * 100).toFixed(0)}%
+              </p>
+            </section>
+
+            <section className="live-stats-section" aria-label="Cadence">
+              <h3>Cadence</h3>
+              <p className="live-stats-value">{liveStats.remainingCount} situation{liveStats.remainingCount > 1 ? 's' : ''}</p>
+              <p className="muted">Temps global restant : {formatMMSS(remainingGlobalMs)}</p>
+              <p className="muted">Temps moyen restant : {formatMMSS(liveStats.avgNowMs)}</p>
+            </section>
+
+            <section className="live-stats-section" aria-label="Pauses">
+              <h3>Pauses</h3>
+              <p className="live-stats-value">{timerState.isPaused ? 'En pause' : 'Session active'}</p>
+              <p className="muted">Durée pause en cours : {formatMMSS(currentPauseMs)}</p>
+              <p className="muted">Fin prévue : {formatDateTime(timerState.endAt)}</p>
+            </section>
           </div>
         </div>
       </div>
