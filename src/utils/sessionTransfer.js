@@ -20,12 +20,15 @@ const normalizeSituation = (situation, index, usedIds) => {
   const color =
     typeof situation?.color === 'string' && situation.color.trim() ? situation.color.trim() : '#6366f1';
   const state = situation?.state === 'PAUSE' ? 'PAUSE' : 'ACTIVE';
+  const parsedWeight = Number.parseInt(situation?.weight, 10);
+  const weight = Number.isFinite(parsedWeight) && parsedWeight > 0 ? parsedWeight : 1;
 
   return {
     id,
     name,
     color,
-    state
+    state,
+    weight
   };
 };
 
