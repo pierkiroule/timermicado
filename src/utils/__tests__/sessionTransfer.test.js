@@ -58,6 +58,35 @@ test('normalizeImportedSession generates local id and normalizes situations', ()
   assert.equal(normalized.initialCount, 1);
 });
 
+
+
+test('normalizeImportedSession ensures unique positive situation ids', () => {
+  const normalized = normalizeImportedSession({
+    name: 'Template IDs',
+    type: 'template',
+    situations: [
+      { id: 2, name: 'A', color: '#111', state: 'ACTIVE' },
+      { id: 2, name: 'B', color: '#222', state: 'ACTIVE' },
+      { id: -1, name: 'C', color: '#333', state: 'ACTIVE' }
+    ]
+  });
+
+  assert.deepEqual(
+    normalized.situations.map((situation) => situation.id),
+    [2, 3, 4]
+  );
+});
+
+test('normalizeImportedSession trims situation color values', () => {
+  const normalized = normalizeImportedSession({
+    name: 'Template Couleurs',
+    type: 'template',
+    situations: [{ id: 1, name: 'A', color: '  #abcdef  ', state: 'ACTIVE' }]
+  });
+
+  assert.equal(normalized.situations[0].color, '#abcdef');
+});
+
 test('buildTemplateExportPayload builds template payload', () => {
   const session = {
     id: 'session-1',

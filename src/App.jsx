@@ -108,6 +108,7 @@ const EVENT_COLORS = {
   PAUSE_END: '#22c55e',
   SITUATION_ADDED: '#8b5cf6',
   SITUATION_REMOVED: '#ef4444',
+  END_TIME_CHANGED: '#f97316',
   SESSION_FINISHED: '#ec4899'
 };
 
@@ -117,6 +118,7 @@ const EVENT_LABELS = {
   PAUSE_END: 'Reprise de la réunion',
   SITUATION_ADDED: 'Situation ajoutée',
   SITUATION_REMOVED: 'Situation supprimée',
+  END_TIME_CHANGED: 'Heure de fin modifiée',
   SESSION_FINISHED: 'Fin de réunion'
 };
 
@@ -422,6 +424,9 @@ export default function App() {
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [sessionEvents, setSessionEvents] = useState([]);
+  const [endAdjustments, setEndAdjustments] = useState([]);
+  const [pressureHistory, setPressureHistory] = useState([]);
+  const [finishConfirmArmed, setFinishConfirmArmed] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
   const [configValues, setConfigValues] = useState({
@@ -434,6 +439,7 @@ export default function App() {
   const statsCloseButtonRef = useRef(null);
   const endLoggedRef = useRef(false);
   const analyticsSvgRef = useRef(null);
+  const finishConfirmTimeoutRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -514,6 +520,9 @@ export default function App() {
     };
 
     setTimerState(nextTimerState);
+    setEndAdjustments([]);
+    setPressureHistory([]);
+    setFinishConfirmArmed(false);
     setSessionEvents([
       {
         id: `evt-${now}`,
@@ -566,6 +575,18 @@ export default function App() {
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
+    setEndAdjustments([]);
+    setPressureHistory([]);
+    setFinishConfirmArmed(false);
+    setSessionEvents([
+      {
+        id: `evt-${now}`,
+        type: 'SESSION_START',
+        at: now,
+        description: `Réunion reprise depuis « ${target.name} ».`
+      }
+    ]);
+    endLoggedRef.current = false;
     setSessionNotice(`Session « ${target.name} » reprise avec une nouvelle heure de fin.`);
   };
 
@@ -807,6 +828,9 @@ export default function App() {
   const handleReset = () => {
     setTimerState(emptyTimerState);
     setSessionEvents([]);
+    setEndAdjustments([]);
+    setPressureHistory([]);
+    setFinishConfirmArmed(false);
     initialAvgRef.current = null;
     endLoggedRef.current = false;
     setShowReset(false);
@@ -814,13 +838,14 @@ export default function App() {
 
   const addSituation = () => {
     const now = Date.now();
+    const newId = Math.max(0, ...timerState.situations.map((s) => s.id)) + 1;
+    const newName = `Situation ${newId}`;
     setTimerState((prev) => {
-      const newId = Math.max(0, ...prev.situations.map((s) => s.id)) + 1;
       return {
         ...prev,
         situations: [
           ...prev.situations,
-          { id: newId, name: `Situation ${newId}`, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE' }
+          { id: newId, name: newName, color: COLORS[(newId - 1) % COLORS.length], state: 'ACTIVE' }
         ]
       };
     });
@@ -830,7 +855,7 @@ export default function App() {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'SITUATION_ADDED',
         at: now,
-        description: 'Une situation a été ajoutée.'
+        description: `Situation ajoutée : ${newName}`
       }
     ]);
   };
@@ -903,6 +928,22 @@ export default function App() {
     endLoggedRef.current = true;
   }, [timerState.isConfigured, isFinished]);
 
+  useEffect(() => {
+    if (!timerState.isConfigured || !timerState.startAt || !timerState.endAt || isFinished) return;
+
+    const hasBaseline = Number.isFinite(initialAvgRef.current) && initialAvgRef.current > 0;
+    const remainingCount = timerState.situations.length;
+    const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
+    const tempoScore = hasBaseline && remainingCount > 0 ? (avgNowMs - initialAvgRef.current) / initialAvgRef.current : 0;
+    const compression = remainingCount === 0 ? 0 : clamp(-tempoScore, 0, 1);
+
+    const now = Date.now();
+    setPressureHistory((prev) => {
+      const next = [...prev, { at: now, pressure: compression }];
+      return next.slice(-120);
+    });
+  }, [timerState.isConfigured, timerState.startAt, timerState.endAt, timerState.situations.length, remainingGlobalMs, isFinished]);
+
   const analyticsPieData = useMemo(() => {
     if (!timerState.isConfigured || !timerState.startAt || !timerState.endAt) {
       return {
@@ -969,6 +1010,7 @@ export default function App() {
       { type: 'PAUSE_END', label: EVENT_LABELS.PAUSE_END },
       { type: 'SITUATION_ADDED', label: EVENT_LABELS.SITUATION_ADDED },
       { type: 'SITUATION_REMOVED', label: EVENT_LABELS.SITUATION_REMOVED },
+      { type: 'END_TIME_CHANGED', label: EVENT_LABELS.END_TIME_CHANGED },
       { type: 'SESSION_FINISHED', label: EVENT_LABELS.SESSION_FINISHED }
     ],
     []
@@ -978,6 +1020,97 @@ export default function App() {
     () => [...sessionEvents].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)),
     [sessionEvents]
   );
+
+  useEffect(
+    () => () => {
+      if (finishConfirmTimeoutRef.current) {
+        window.clearTimeout(finishConfirmTimeoutRef.current);
+      }
+    },
+    []
+  );
+
+  const pressureSeries = useMemo(() => {
+    if (!timerState.startAt || !timerState.endAt || pressureHistory.length === 0) {
+      return [];
+    }
+    const totalMs = Math.max(1, timerState.endAt - timerState.startAt);
+    return pressureHistory.map((point) => {
+      const x = clamp(((point.at - timerState.startAt) / totalMs) * 100, 0, 100);
+      return { ...point, x, y: 100 - point.pressure * 100 };
+    });
+  }, [pressureHistory, timerState.startAt, timerState.endAt]);
+
+  const pressurePath = useMemo(() => {
+    if (pressureSeries.length === 0) return '';
+    return pressureSeries
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+      .join(' ');
+  }, [pressureSeries]);
+
+  const pressureExtremes = useMemo(() => {
+    if (pressureSeries.length === 0) {
+      return { peak: null, relax: null };
+    }
+    const peak = pressureSeries.reduce((max, point) => (point.pressure > max.pressure ? point : max), pressureSeries[0]);
+    const relax = pressureSeries.reduce((min, point) => (point.pressure < min.pressure ? point : min), pressureSeries[0]);
+    return { peak, relax };
+  }, [pressureSeries]);
+
+  const meetingStats = useMemo(() => {
+    const startAt = timerState.startAt;
+    if (!startAt) {
+      return {
+        actualEndAt: null,
+        plannedEndAt: null,
+        totalDurationMs: 0,
+        situationDurations: []
+      };
+    }
+
+    const plannedEndAt = timerState.endAt;
+    const finishedEvent = [...orderedEvents].reverse().find((event) => event.type === 'SESSION_FINISHED') ?? null;
+    const actualEndAt = isFinished ? (finishedEvent?.at ?? wallNow) : wallNow;
+    const totalDurationMs = Math.max(0, actualEndAt - startAt);
+
+    const removedAtMap = new Map();
+    const addedNames = new Set();
+    orderedEvents.forEach((event) => {
+      if (event.type === 'SITUATION_ADDED' && typeof event.description === 'string') {
+        const parts = event.description.split(':');
+        const name = (parts[1] || '').trim();
+        if (name) addedNames.add(name);
+      }
+      if (event.type === 'SITUATION_REMOVED' && typeof event.description === 'string') {
+        const parts = event.description.split(':');
+        const name = (parts[1] || '').trim();
+        if (name) removedAtMap.set(name, event.at);
+      }
+    });
+
+    const knownNames = new Set(timerState.situations.map((situation) => situation.name));
+    addedNames.forEach((name) => knownNames.add(name));
+
+    const situationDurations = [...knownNames]
+      .filter(Boolean)
+      .map((name, index) => {
+        const removedAt = removedAtMap.get(name);
+        const endAt = removedAt ?? actualEndAt;
+        return {
+          id: index + 1,
+          name,
+          durationMs: Math.max(0, endAt - startAt)
+        };
+      })
+      .sort((a, b) => b.durationMs - a.durationMs);
+
+    return {
+      actualEndAt,
+      plannedEndAt,
+      totalDurationMs,
+      situationDurations
+    };
+  }, [timerState.startAt, timerState.endAt, timerState.situations, orderedEvents, isFinished, wallNow]);
 
   const toggleGlobalPause = () => {
     if (!timerState.isConfigured || isFinished) return;
@@ -1002,6 +1135,23 @@ export default function App() {
 
   const handleFinishMeeting = () => {
     if (!timerState.isConfigured || isFinished) return;
+    if (!finishConfirmArmed) {
+      setFinishConfirmArmed(true);
+      setSessionNotice('Confirmez en recliquant : mettre fin à la réunion maintenant.');
+      if (finishConfirmTimeoutRef.current) {
+        window.clearTimeout(finishConfirmTimeoutRef.current);
+      }
+      finishConfirmTimeoutRef.current = window.setTimeout(() => {
+        setFinishConfirmArmed(false);
+      }, 5000);
+      return;
+    }
+
+    setFinishConfirmArmed(false);
+    if (finishConfirmTimeoutRef.current) {
+      window.clearTimeout(finishConfirmTimeoutRef.current);
+      finishConfirmTimeoutRef.current = null;
+    }
     endLoggedRef.current = false;
     setTimerState((prev) => ({
       ...prev,
@@ -1023,6 +1173,25 @@ export default function App() {
       ...prev,
       endAt: nextEndAt
     }));
+    const eventAt = Date.now();
+    setEndAdjustments((prev) => [
+      ...prev,
+      {
+        id: `end-change-${eventAt}`,
+        at: eventAt,
+        value: configValues.end,
+        endAt: nextEndAt
+      }
+    ]);
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `evt-${eventAt}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'END_TIME_CHANGED',
+        at: eventAt,
+        description: `Heure de fin modifiée à ${configValues.end}.`
+      }
+    ]);
     endLoggedRef.current = false;
     setSessionNotice(`Heure de fin mise à jour à ${configValues.end}.`);
   };
@@ -1074,7 +1243,9 @@ export default function App() {
                 onClick={handleFinishMeeting}
                 disabled={isFinished}
               >
-                ✅ Mettre fin à la réunion (avant l'heure de fin fixée)
+                {finishConfirmArmed
+                  ? '⚠️ Confirmer maintenant : mettre fin à la réunion'
+                  : '✅ Mettre fin à la réunion (avant l\'heure de fin fixée)'}
               </button>
               {timerState.isPaused && (
                 <span className="pause-live" aria-live="polite">
@@ -1458,6 +1629,83 @@ export default function App() {
                   <li key={line}>{line}</li>
                 ))}
               </ul>
+
+              <div className="meeting-facts-grid" aria-label="Données chiffrées de réunion">
+                <div className="meeting-fact-item">
+                  <span>Heure de début</span>
+                  <strong>{formatDateTime(timerState.startAt)}</strong>
+                </div>
+                <div className="meeting-fact-item">
+                  <span>Heure de fin fixée</span>
+                  <strong>{formatDateTime(meetingStats.plannedEndAt)}</strong>
+                </div>
+                <div className="meeting-fact-item">
+                  <span>Heure de fin réelle</span>
+                  <strong>{formatDateTime(meetingStats.actualEndAt)}</strong>
+                </div>
+                <div className="meeting-fact-item">
+                  <span>Durée globale</span>
+                  <strong>{formatMMSS(meetingStats.totalDurationMs)}</strong>
+                </div>
+              </div>
+
+              <div className="end-change-list" aria-label="Historique des modifications de fin">
+                <div className="sub" style={{ marginBottom: '4px' }}><strong>Horaires de fin modifiés</strong></div>
+                {endAdjustments.length === 0 ? (
+                  <div className="sub">Aucune modification.</div>
+                ) : (
+                  endAdjustments.map((entry) => (
+                    <div className="sub" key={entry.id}>{formatDateTime(entry.at)} → {entry.value}</div>
+                  ))
+                )}
+              </div>
+
+              <div className="pressure-chart-wrap" aria-label="Courbe de pression au cours de la réunion">
+                <div className="sub" style={{ marginBottom: '4px' }}><strong>Courbe de pression</strong></div>
+                <svg viewBox="0 0 100 100" className="pressure-chart" role="img" aria-label="Courbe de pression avec pics et creux">
+                  <rect x="0" y="0" width="100" height="100" fill="rgba(15,23,42,.2)" />
+                  <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
+                  <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
+                  <line x1="0" y1="75" x2="100" y2="75" stroke="rgba(148,163,184,.25)" strokeWidth="0.8" />
+                  {pressurePath && <path d={pressurePath} fill="none" stroke="#38bdf8" strokeWidth="1.8" />}
+                  {pressureExtremes.peak && (
+                    <g>
+                      <circle cx={pressureExtremes.peak.x} cy={pressureExtremes.peak.y} r="2.2" fill="#ef4444" />
+                      <title>{`Pic tension ${Math.round(pressureExtremes.peak.pressure * 100)}%`}</title>
+                    </g>
+                  )}
+                  {pressureExtremes.relax && (
+                    <g>
+                      <circle cx={pressureExtremes.relax.x} cy={pressureExtremes.relax.y} r="2.2" fill="#22c55e" />
+                      <title>{`Pic relax ${Math.round(pressureExtremes.relax.pressure * 100)}%`}</title>
+                    </g>
+                  )}
+                </svg>
+                <div className="sub">
+                  {pressureExtremes.peak
+                    ? `Pic de tension : ${Math.round(pressureExtremes.peak.pressure * 100)}% (${formatDateTime(pressureExtremes.peak.at)})`
+                    : 'Pic de tension : indisponible'}
+                </div>
+                <div className="sub">
+                  {pressureExtremes.relax
+                    ? `Pic de relax : ${Math.round(pressureExtremes.relax.pressure * 100)}% (${formatDateTime(pressureExtremes.relax.at)})`
+                    : 'Pic de relax : indisponible'}
+                </div>
+              </div>
+
+              <div className="duration-ranking" aria-label="Classement des situations par durée décroissante">
+                <div className="sub" style={{ marginBottom: '4px' }}><strong>Situations classées par durée</strong></div>
+                {meetingStats.situationDurations.length === 0 ? (
+                  <div className="sub">Aucune situation.</div>
+                ) : (
+                  meetingStats.situationDurations.map((item) => (
+                    <div className="duration-row" key={`${item.id}-${item.name}`}>
+                      <span>{item.name}</span>
+                      <strong>{formatMMSS(item.durationMs)}</strong>
+                    </div>
+                  ))
+                )}
+              </div>
 
               <div className="event-legend" aria-label="Légende des événements">
                 {eventLegendEntries.map((entry) => (

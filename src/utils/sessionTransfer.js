@@ -2,16 +2,23 @@ export const TEMPLATE_SCHEMA_VERSION = 1;
 
 const DEFAULT_TEMPLATE_NAME = 'Template importé';
 
-const normalizeSituation = (situation, index) => {
+const normalizeSituation = (situation, index, usedIds) => {
   const fallbackId = index + 1;
   const parsedId = Number.parseInt(situation?.id, 10);
-  const id = Number.isFinite(parsedId) && parsedId > 0 ? parsedId : fallbackId;
+  const isValidParsedId = Number.isFinite(parsedId) && parsedId > 0;
+
+  let id = isValidParsedId ? parsedId : fallbackId;
+  while (usedIds.has(id)) {
+    id += 1;
+  }
+  usedIds.add(id);
+
   const name =
     typeof situation?.name === 'string' && situation.name.trim()
       ? situation.name.trim()
       : `Situation ${fallbackId}`;
   const color =
-    typeof situation?.color === 'string' && situation.color.trim() ? situation.color : '#6366f1';
+    typeof situation?.color === 'string' && situation.color.trim() ? situation.color.trim() : '#6366f1';
   const state = situation?.state === 'PAUSE' ? 'PAUSE' : 'ACTIVE';
 
   return {
@@ -82,7 +89,8 @@ export const buildUniqueCopyName = (baseName, existingNames) => {
 
 export const normalizeImportedSession = (payload) => {
   const now = Date.now();
-  const situations = payload.situations.map((situation, index) => normalizeSituation(situation, index));
+  const usedIds = new Set();
+  const situations = payload.situations.map((situation, index) => normalizeSituation(situation, index, usedIds));
 
   return {
     id: `session-${now}-${Math.random().toString(36).slice(2, 8)}`,
