@@ -8,6 +8,7 @@ import {
 
 const LEGACY_STORAGE_KEY = 'micado_timer_ultra_robust_v2';
 const APP_STORAGE_KEY = 'micado_timer_sessions_v1';
+const UI_MODE_STORAGE_KEY = 'micado_timer_ui_mode_v1';
 
 const COLORS = [
   '#6366f1',
@@ -205,6 +206,16 @@ const loadAppState = () => {
       sessions: [],
       activeSessionId: null
     };
+  }
+};
+
+const loadUiMode = () => {
+  try {
+    const raw = window.localStorage.getItem(UI_MODE_STORAGE_KEY);
+    return raw === 'advanced' ? 'advanced' : 'simple';
+  } catch (error) {
+    console.warn('Impossible de charger le mode d’interface.', error);
+    return 'simple';
   }
 };
 
@@ -415,7 +426,9 @@ const CompressionPie = ({
 
 export default function App() {
   const initialData = useMemo(() => loadAppState(), []);
+  const initialUiMode = useMemo(() => loadUiMode(), []);
   const [timerState, setTimerState] = useState(initialData.timerState);
+  const [uiMode, setUiMode] = useState(initialUiMode);
   const [sessions, setSessions] = useState(initialData.sessions);
   const [activeSessionId, setActiveSessionId] = useState(initialData.activeSessionId);
   const [sessionName, setSessionName] = useState('');
@@ -456,6 +469,14 @@ export default function App() {
       console.warn('Impossible de sauvegarder la session.', error);
     }
   }, [timerState, sessions, activeSessionId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UI_MODE_STORAGE_KEY, uiMode);
+    } catch (error) {
+      console.warn('Impossible de sauvegarder le mode d’interface.', error);
+    }
+  }, [uiMode]);
 
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
@@ -899,6 +920,7 @@ export default function App() {
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+  const isAdvancedMode = uiMode === 'advanced';
   useEffect(() => {
     if (!isStatsModalOpen) return;
 
@@ -1230,33 +1252,58 @@ export default function App() {
             3) PRIORISER Avec le temps restant, priorisez et recentrez ensemble sur l&apos;urgence de l&apos;essentiel.
           </div>
         </div>
-        <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="col topbar-controls" style={{ gap: '10px', alignItems: 'stretch', width: '100%' }}>
           {timerState.isConfigured && (
-            <>
-              <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
-                {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+            <div className="mode-switch" role="group" aria-label="Mode d'interface">
+              <button
+                type="button"
+                className={`mode-chip ${uiMode === 'simple' ? 'active' : ''}`}
+                onClick={() => setUiMode('simple')}
+                aria-pressed={uiMode === 'simple'}
+              >
+                ⚡ Simplifié
               </button>
               <button
                 type="button"
-                className="btn-outline"
-                style={{ width: 'auto' }}
-                onClick={handleFinishMeeting}
-                disabled={isFinished}
+                className={`mode-chip ${uiMode === 'advanced' ? 'active' : ''}`}
+                onClick={() => setUiMode('advanced')}
+                aria-pressed={uiMode === 'advanced'}
               >
-                {finishConfirmArmed
-                  ? '⚠️ Confirmer maintenant : mettre fin à la réunion'
-                  : '✅ Mettre fin à la réunion (avant l\'heure de fin fixée)'}
+                🛠 Avancé
               </button>
-              {timerState.isPaused && (
-                <span className="pause-live" aria-live="polite">
-                  Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
-                </span>
-              )}
-            </>
+            </div>
           )}
-          <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
-            🆕 Créer une nouvelle réunion
-          </button>
+
+          <div className="row" style={{ gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {timerState.isConfigured && (
+              <>
+                <button type="button" className="btn-primary" style={{ width: 'auto' }} onClick={toggleGlobalPause} disabled={isFinished}>
+                  {timerState.isPaused ? '▶️ Reprendre' : '⏸ Pause'}
+                </button>
+                {isAdvancedMode && (
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ width: 'auto' }}
+                    onClick={handleFinishMeeting}
+                    disabled={isFinished}
+                  >
+                    {finishConfirmArmed
+                      ? '⚠️ Confirmer maintenant : mettre fin à la réunion'
+                      : "✅ Mettre fin à la réunion (avant l'heure de fin fixée)"}
+                  </button>
+                )}
+                {timerState.isPaused && (
+                  <span className="pause-live" aria-live="polite">
+                    Durée de pause en temps réel : {formatMMSS(currentPauseMs)}
+                  </span>
+                )}
+              </>
+            )}
+            <button type="button" className="btn-danger" onClick={() => setShowReset(true)}>
+              🆕 Créer une nouvelle réunion
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1319,24 +1366,26 @@ export default function App() {
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
-              <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
-                <input
-                  id="runEndEdit"
-                  type="time"
-                  value={configValues.end}
-                  onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
-                  aria-label="Modifier l'heure de fin"
-                  style={{ maxWidth: '180px' }}
-                />
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={handleAdjustEndTime}
-                  disabled={!configValues.end || isFinished}
-                >
-                  Modifier l'heure de fin fixée précédemment
-                </button>
-              </div>
+              {isAdvancedMode && (
+                <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
+                  <input
+                    id="runEndEdit"
+                    type="time"
+                    value={configValues.end}
+                    onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
+                    aria-label="Modifier l'heure de fin"
+                    style={{ maxWidth: '180px' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={handleAdjustEndTime}
+                    disabled={!configValues.end || isFinished}
+                  >
+                    Modifier l'heure de fin fixée précédemment
+                  </button>
+                </div>
+              )}
               <CompressionPie
                 situations={timerState.situations}
                 startAt={timerState.startAt}
@@ -1344,16 +1393,18 @@ export default function App() {
                 wallNow={wallNow}
                 initialAvgMs={initialAvgRef.current}
               />
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setIsStatsModalOpen(true)}
-                aria-haspopup="dialog"
-                aria-controls="liveStatsModal"
-                aria-expanded={isStatsModalOpen}
-              >
-                📊 Stats live
-              </button>
+              {isAdvancedMode && (
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => setIsStatsModalOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-controls="liveStatsModal"
+                  aria-expanded={isStatsModalOpen}
+                >
+                  📊 Stats live
+                </button>
+              )}
             </div>
           </div>
 
@@ -1409,7 +1460,8 @@ export default function App() {
       )}
 
 
-      <div className="card sessions-panel">
+      {isAdvancedMode && (
+        <div className="card sessions-panel">
         <button
           type="button"
           className={`sessions-accordion-toggle ${isSessionsPanelOpen ? 'open' : ''}`}
@@ -1529,6 +1581,7 @@ export default function App() {
           </div>
         )}
       </div>
+      )}
 
       <div id="modal" className={`modal ${showReset ? 'show' : ''}`}>
         <div className="box">
@@ -1547,13 +1600,14 @@ export default function App() {
         </div>
       </div>
 
-      <div
-        id="liveStatsModal"
-        className={`modal ${isStatsModalOpen ? 'show' : ''}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="liveStatsModalTitle"
-      >
+      {isAdvancedMode && (
+        <div
+          id="liveStatsModal"
+          className={`modal ${isStatsModalOpen ? 'show' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="liveStatsModalTitle"
+        >
         <div className="box live-stats-box">
           <div className="row-between" style={{ marginBottom: '12px' }}>
             <div>
@@ -1769,6 +1823,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }
