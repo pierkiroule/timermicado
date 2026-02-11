@@ -596,6 +596,18 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadFile = (filename, content, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportTemplate = () => {
     if (!selectedSession) return;
     const payload = buildTemplateExportPayload(selectedSession);
@@ -619,9 +631,10 @@ export default function App() {
       .replace(/(^-|-$)/g, '');
 
     img.onload = () => {
+      const eventRowsHeight = Math.max(220, orderedEvents.length * 30 + 60);
       const canvas = document.createElement('canvas');
-      canvas.width = 520;
-      canvas.height = 520;
+      canvas.width = 1300;
+      canvas.height = 520 + eventRowsHeight;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         URL.revokeObjectURL(url);
@@ -629,7 +642,55 @@ export default function App() {
       }
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 20, 20, 480, 480);
+
+      ctx.drawImage(img, 30, 24, 480, 480);
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 30px ui-sans-serif, system-ui';
+      ctx.fillText('Rapport de synthèse — Déroulé réunion', 540, 70);
+
+      ctx.font = '18px ui-sans-serif, system-ui';
+      ctx.fillStyle = '#cbd5e1';
+      reportSummaryLines.forEach((line, index) => {
+        ctx.fillText(`• ${line}`, 540, 120 + index * 34);
+      });
+
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 22px ui-sans-serif, system-ui';
+      ctx.fillText('Légende des événements', 540, 265);
+
+      ctx.font = '16px ui-sans-serif, system-ui';
+      eventLegendEntries.forEach((entry, index) => {
+        const col = index % 2;
+        const row = Math.floor(index / 2);
+        const x = 540 + col * 320;
+        const y = 300 + row * 34;
+        ctx.fillStyle = EVENT_COLORS[entry.type] ?? '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(x, y - 5, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillText(entry.label, x + 16, y);
+      });
+
+      const listStartY = 520;
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 22px ui-sans-serif, system-ui';
+      ctx.fillText('Chronologie des événements', 30, listStartY);
+
+      ctx.font = '15px ui-sans-serif, system-ui';
+      orderedEvents.forEach((event, index) => {
+        const y = listStartY + 38 + index * 30;
+        ctx.fillStyle = EVENT_COLORS[event.type] ?? '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(38, y - 5, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#e2e8f0';
+        const label = EVENT_LABELS[event.type] ?? event.type;
+        const line = `${formatDateTime(event.at)} · ${label} · ${event.description}`;
+        ctx.fillText(line, 54, y);
+      });
+
       const pngUrl = canvas.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = pngUrl;
@@ -642,6 +703,69 @@ export default function App() {
     };
 
     img.src = url;
+  };
+
+  const buildAnalyticsTextReport = () => {
+    const lines = [
+      'Rapport de synthèse — Déroulé réunion',
+      `Progression: ${(analyticsPieData.progressRatio * 100).toFixed(0)}%`,
+      `Temps écoulé: ${formatMMSS(analyticsPieData.elapsedMs)}`,
+      `Temps restant: ${formatMMSS(analyticsPieData.remainingMs)}`,
+      `Événements: ${analyticsPieData.eventCount}`,
+      '',
+      'Chronologie des événements:'
+    ];
+
+    orderedEvents.forEach((event) => {
+      lines.push(`${formatDateTime(event.at)} | ${EVENT_LABELS[event.type] ?? event.type} | ${event.description}`);
+    });
+
+    return lines.join('\n');
+  };
+
+  const buildAnalyticsXlsContent = () => {
+    const header = [
+      ['Section', 'Clé', 'Valeur'].join('\t'),
+      ['Résumé', 'Progression (%)', (analyticsPieData.progressRatio * 100).toFixed(0)].join('\t'),
+      ['Résumé', 'Temps écoulé', formatMMSS(analyticsPieData.elapsedMs)].join('\t'),
+      ['Résumé', 'Temps restant', formatMMSS(analyticsPieData.remainingMs)].join('\t'),
+      ['Résumé', 'Événements', String(analyticsPieData.eventCount)].join('\t'),
+      '',
+      ['Événements', 'Horodatage', 'Type', 'Description'].join('\t')
+    ];
+
+    const rows = orderedEvents.map((event) => [
+      'Événements',
+      formatDateTime(event.at),
+      EVENT_LABELS[event.type] ?? event.type,
+      event.description
+    ].join('\t'));
+
+    return [...header, ...rows].join('\n');
+  };
+
+  const handleExportAnalyticsText = () => {
+    if (!isFinished) return;
+    const slug = (selectedSession?.name || 'deroule-reunion')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    downloadFile(`${slug || 'deroule-reunion'}.analytics.txt`, buildAnalyticsTextReport(), 'text/plain;charset=utf-8');
+    setSessionNotice('Rapport texte exporté.');
+  };
+
+  const handleExportAnalyticsXls = () => {
+    if (!isFinished) return;
+    const slug = (selectedSession?.name || 'deroule-reunion')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    downloadFile(
+      `${slug || 'deroule-reunion'}.analytics.xls`,
+      buildAnalyticsXlsContent(),
+      'application/vnd.ms-excel;charset=utf-8'
+    );
+    setSessionNotice('Rapport tableur (.xls) exporté.');
   };
 
   const handleImportClick = () => {
@@ -1342,6 +1466,24 @@ export default function App() {
               >
                 Exporter le rapport visuel (.png)
               </button>
+              <div className="row" style={{ gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={handleExportAnalyticsText}
+                  disabled={!isFinished}
+                >
+                  Export texte (.txt)
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={handleExportAnalyticsXls}
+                  disabled={!isFinished}
+                >
+                  Export tableur (.xls)
+                </button>
+              </div>
             </section>
           </div>
         </div>
