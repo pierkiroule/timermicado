@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  buildTemplateExportPayload,
+  buildUniqueCopyName,
+  normalizeImportedSession,
+  validateTemplateFile
+} from './utils/sessionTransfer';
 
 const LEGACY_STORAGE_KEY = 'micado_timer_ultra_robust_v2';
 const APP_STORAGE_KEY = 'micado_timer_sessions_v1';
@@ -404,6 +410,7 @@ export default function App() {
   });
   const tickRef = useRef(null);
   const initialAvgRef = useRef(null);
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -542,6 +549,62 @@ export default function App() {
     }
     if (target) {
       setSessionNotice(`Sauvegarde « ${target.name} » supprimée.`);
+    }
+  };
+
+  const downloadJsonFile = (filename, payload) => {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportTemplate = () => {
+    if (!selectedSession) return;
+    const payload = buildTemplateExportPayload(selectedSession);
+    const slug = selectedSession.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    downloadJsonFile(`${slug || 'template-session'}.template.json`, payload);
+    setSessionNotice(`Template « ${selectedSession.name} » exporté.`);
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportTemplate = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const raw = await file.text();
+      const payload = JSON.parse(raw);
+      const validation = validateTemplateFile(payload);
+
+      if (!validation.valid) {
+        setSessionNotice(validation.message);
+        return;
+      }
+
+      const imported = normalizeImportedSession(payload);
+      const importedName = buildUniqueCopyName(imported.name, sessions.map((session) => session.name));
+      const importedSession = {
+        ...imported,
+        name: importedName
+      };
+
+      setSessions((prev) => [importedSession, ...prev]);
+      setSelectedSessionId(importedSession.id);
+      setSessionNotice(`Template importé avec succès : « ${importedName} ».`);
+    } catch (error) {
+      console.warn('Impossible d’importer le template.', error);
+      setSessionNotice('Import impossible : fichier JSON invalide.');
+    } finally {
+      event.target.value = '';
     }
   };
 
@@ -865,6 +928,19 @@ export default function App() {
                   </div>
 
                   <div className="session-action-block">
+                    <button type="button" className="btn-outline" onClick={handleExportTemplate} disabled={!selectedSession}>
+                      Partager la liste (template)
+                    </button>
+                    <button type="button" className="btn-outline" onClick={handleImportClick}>
+                      Importer un template
+                    </button>
+                    <input
+                      ref={importInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      onChange={handleImportTemplate}
+                      style={{ display: 'none' }}
+                    />
                     <button type="button" className="btn-outline" onClick={() => handleLoadSession()} disabled={!canResumeSession}>
                       Reprendre (heure de fin ci-dessus)
                     </button>
