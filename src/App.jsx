@@ -261,15 +261,14 @@ const CompressionPie = ({
   situations,
   startAt,
   endAt,
-  wallNow,
-  initialAvgMs
+  wallNow
 }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const tempoScore =
-    initialAvgMs && remainingCount > 0 ? (avgNowMs - initialAvgMs) / initialAvgMs : 0;
-  const compression = remainingCount === 0 ? 0 : clamp(Math.abs(tempoScore), 0, 1);
+  const totalMs = Math.max(1, endAt - startAt);
+  const elapsedMs = clamp(wallNow - startAt, 0, totalMs);
+  const compression = clamp(elapsedMs / totalMs, 0, 1);
   const pressureEmoji =
     compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
   const hatchedAngle = compression * 360;
@@ -407,7 +406,7 @@ const CompressionPie = ({
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
-          {(compression * 100).toFixed(1)}%
+          {(compression * 100).toFixed(0)}%
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
@@ -445,7 +444,6 @@ export default function App() {
     end: ''
   });
   const tickRef = useRef(null);
-  const initialAvgRef = useRef(null);
   const importInputRef = useRef(null);
   const statsCloseButtonRef = useRef(null);
   const endLoggedRef = useRef(false);
@@ -522,7 +520,6 @@ export default function App() {
     const n = clamp(parseInt(configValues.nb || '5', 10) || 5, 1, 25);
     if (!configValues.end) return;
 
-    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -575,7 +572,6 @@ export default function App() {
     const target = sessions.find((session) => session.id === sessionId);
     if (!target || !target.situations.length) return;
 
-    initialAvgRef.current = null;
     const now = Date.now();
     let endAt = parseTimeToToday(configValues.end);
     if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
@@ -680,7 +676,6 @@ export default function App() {
     setTimerState(emptyTimerState);
     setSessionEvents([]);
     setFinishConfirmArmed(false);
-    initialAvgRef.current = null;
     endLoggedRef.current = false;
     setShowReset(false);
   };
@@ -734,13 +729,6 @@ export default function App() {
     }));
   };
 
-  useEffect(() => {
-    const baselineCount = timerState.initialCount ?? timerState.situations.length;
-    if (!initialAvgRef.current && timerState.startAt && timerState.endAt && baselineCount > 0) {
-      const totalInitialMs = timerState.endAt - timerState.startAt;
-      initialAvgRef.current = totalInitialMs / baselineCount;
-    }
-  }, [timerState.startAt, timerState.endAt, timerState.situations.length, timerState.initialCount]);
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
@@ -1191,7 +1179,6 @@ export default function App() {
                 startAt={timerState.startAt}
                 endAt={timerState.endAt}
                 wallNow={wallNow}
-                initialAvgMs={initialAvgRef.current}
               />
               {isAdvancedMode && (
                 <button
