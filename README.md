@@ -18,3 +18,7 @@ Puis ouvrez <http://localhost:5173>.
 - Mode pause/reprise et passage au cas suivant.
 - Export Excel de la synthèse.
 - Sauvegarde locale automatique (LocalStorage).
+
+## Qualité / release
+
+- Checklist de release et scénarios de non-régression : `RELEASE_CHECKLIST.md`.

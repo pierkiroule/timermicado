@@ -96,3 +96,15 @@ test('buildSessionReportPayload builds report payload with KPIs', () => {
   assert.equal(payload.kpis.namedSituationsCount, 1);
   assert.equal(payload.kpis.activeSituationsCount, 1);
 });
+
+test('buildSessionReportPayload falls back safely when metadata is missing', () => {
+  const payload = buildSessionReportPayload({
+    situations: [{ id: 1, name: 'A', color: '#000', state: 'ACTIVE' }]
+  });
+
+  assert.equal(payload.type, 'report');
+  assert.equal(payload.session.name, 'Session sans nom');
+  assert.equal(payload.session.initialCount, 1);
+  assert.equal(payload.session.currentCount, 1);
+  assert.equal(payload.kpis.coverageRatio, 1);
+});
