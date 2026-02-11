@@ -979,6 +979,10 @@ export default function App() {
   const handleAdjustEndTime = () => {
     if (!timerState.isConfigured || !configValues.end) return;
 
+    const previousEndTime = Number.isFinite(timerState.endAt)
+      ? new Date(timerState.endAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+      : null;
+
     const now = Date.now();
     let nextEndAt = parseTimeToToday(configValues.end);
     if (nextEndAt <= now) nextEndAt += 24 * 60 * 60 * 1000;
@@ -994,11 +998,17 @@ export default function App() {
         id: `evt-${eventAt}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'END_TIME_CHANGED',
         at: eventAt,
-        description: `Heure de fin modifiée à ${configValues.end}.`
+        description: previousEndTime
+          ? `Heure de fin ajustée : ${previousEndTime} → ${configValues.end}.`
+          : `Heure de fin ajustée à ${configValues.end}.`
       }
     ]);
     endLoggedRef.current = false;
-    setSessionNotice(`Heure de fin mise à jour à ${configValues.end}.`);
+    setSessionNotice(
+      previousEndTime
+        ? `Heure de fin ajustée de ${previousEndTime} à ${configValues.end}. L'horloge continue sans interruption.`
+        : `Nouvelle heure de fin appliquée : ${configValues.end}. L'horloge continue sans interruption.`
+    );
   };
 
   return (
@@ -1150,23 +1160,30 @@ export default function App() {
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
               {isAdvancedMode && (
-                <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
-                  <input
-                    id="runEndEdit"
-                    type="time"
-                    value={configValues.end}
-                    onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
-                    aria-label="Modifier l'heure de fin"
-                    style={{ maxWidth: '180px' }}
-                  />
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={handleAdjustEndTime}
-                    disabled={!configValues.end || isFinished}
-                  >
-                    Modifier l'heure de fin fixée précédemment
-                  </button>
+                <div className="col end-time-adjust" style={{ gap: '8px' }}>
+                  <label htmlFor="runEndEdit">Ajuster l'heure de fin en cours de réunion</label>
+                  <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
+                    <input
+                      id="runEndEdit"
+                      type="time"
+                      value={configValues.end}
+                      onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
+                      aria-label="Nouvelle heure de fin visée"
+                      style={{ maxWidth: '180px' }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={handleAdjustEndTime}
+                      disabled={!configValues.end || isFinished}
+                    >
+                      Appliquer la nouvelle heure de fin
+                    </button>
+                  </div>
+                  <div className="sub">
+                    Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
+                    Le timer continue ; seule l&apos;échéance est recalculée.
+                  </div>
                 </div>
               )}
               <CompressionPie
