@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  buildSessionReportText,
   buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
@@ -568,6 +569,18 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadTextFile = (filename, content) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportTemplate = () => {
     if (!selectedSession) return;
     const payload = buildTemplateExportPayload(selectedSession);
@@ -577,10 +590,11 @@ export default function App() {
   };
 
   const handleExportSessionReport = () => {
-    if (!selectedSession) return;
+    if (!selectedSession || !isFinished) return;
     const payload = buildSessionReportPayload(selectedSession);
+    const reportText = buildSessionReportText(payload);
     const slug = selectedSession.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    downloadJsonFile(`${slug || 'session'}.report.json`, payload);
+    downloadTextFile(`${slug || 'session'}.report.txt`, reportText);
     setSessionNotice(`Rapport de synthèse « ${selectedSession.name} » exporté.`);
   };
 
@@ -998,9 +1012,11 @@ export default function App() {
                     <button type="button" className="btn-outline" onClick={handleExportTemplate} disabled={!selectedSession}>
                       Partager la liste (template)
                     </button>
-                    <button type="button" className="btn-outline" onClick={handleExportSessionReport} disabled={!selectedSession}>
-                      Partager rapport de synthèse
-                    </button>
+                    {isFinished && (
+                      <button type="button" className="btn-outline" onClick={handleExportSessionReport} disabled={!selectedSession}>
+                        Partager rapport de synthèse (.txt)
+                      </button>
+                    )}
                     <button type="button" className="btn-outline" onClick={handleImportClick}>
                       Importer un template
                     </button>

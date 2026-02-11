@@ -143,3 +143,33 @@ export const buildSessionReportPayload = (session) => {
     }
   };
 };
+
+export const buildSessionReportText = (reportPayload) => {
+  const report = reportPayload ?? {};
+  const session = report.session ?? {};
+  const kpis = report.kpis ?? {};
+
+  const formatRatio = (value) => `${Math.round((Number(value) || 0) * 100)}%`;
+  const formatDate = (timestamp) =>
+    Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString('fr-FR') : 'inconnue';
+
+  return [
+    'Rapport de synthèse — Timer MICADO',
+    `Généré le : ${formatDate(report.generatedAt)}`,
+    '',
+    'Session',
+    `- Nom : ${session.name ?? 'Session sans nom'}`,
+    `- ID : ${session.id ?? 'inconnu'}`,
+    `- Créée le : ${formatDate(session.createdAt)}`,
+    `- Mise à jour : ${formatDate(session.updatedAt)}`,
+    `- Plan initial : ${session.initialCount ?? 0}`,
+    `- Situations actuelles : ${session.currentCount ?? 0}`,
+    '',
+    'KPIs',
+    `- Couverture de la liste : ${formatRatio(kpis.coverageRatio)}`,
+    `- Intitulés renseignés : ${formatRatio(kpis.namingRatio)}`,
+    `- Situations actives : ${formatRatio(kpis.activeRatio)}`,
+    `- Nombre d\'intitulés renseignés : ${kpis.namedSituationsCount ?? 0}`,
+    `- Nombre de situations actives : ${kpis.activeSituationsCount ?? 0}`
+  ].join('\n');
+};

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildSessionReportText,
   buildSessionReportPayload,
   buildTemplateExportPayload,
   buildUniqueCopyName,
@@ -107,4 +108,30 @@ test('buildSessionReportPayload falls back safely when metadata is missing', () 
   assert.equal(payload.session.initialCount, 1);
   assert.equal(payload.session.currentCount, 1);
   assert.equal(payload.kpis.coverageRatio, 1);
+});
+
+test('buildSessionReportText returns readable plain text report', () => {
+  const text = buildSessionReportText({
+    generatedAt: 1700000000000,
+    session: {
+      id: 'session-1',
+      name: 'Réunion staff',
+      createdAt: 1700000000000,
+      updatedAt: 1700003600000,
+      initialCount: 5,
+      currentCount: 4
+    },
+    kpis: {
+      coverageRatio: 0.8,
+      namingRatio: 0.75,
+      activeRatio: 0.5,
+      namedSituationsCount: 3,
+      activeSituationsCount: 2
+    }
+  });
+
+  assert.equal(text.includes('Rapport de synthèse — Timer MICADO'), true);
+  assert.equal(text.includes('- Nom : Réunion staff'), true);
+  assert.equal(text.includes('- Couverture de la liste : 80%'), true);
+  assert.equal(text.includes('- Situations actives : 50%'), true);
 });
