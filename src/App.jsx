@@ -402,6 +402,7 @@ export default function App() {
   const [selectedSessionId, setSelectedSessionId] = useState(initialData.activeSessionId ?? '');
   const [sessionNotice, setSessionNotice] = useState('');
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
+  const [isSessionSummaryOpen, setIsSessionSummaryOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
@@ -657,6 +658,21 @@ export default function App() {
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
+  const selectedSessionSituations = Array.isArray(selectedSession?.situations) ? selectedSession.situations : [];
+  const selectedSessionInitialCount =
+    typeof selectedSession?.initialCount === 'number' && selectedSession.initialCount > 0
+      ? selectedSession.initialCount
+      : null;
+  const hasSelectedSessionCompleteData = Boolean(selectedSession) && selectedSessionInitialCount !== null;
+  const namedSituationsCount = selectedSessionSituations.filter(
+    (situation) => typeof situation?.name === 'string' && situation.name.trim().length > 0
+  ).length;
+  const activeSituationsCount = selectedSessionSituations.filter((situation) => situation?.state === 'ACTIVE').length;
+  const sessionCoverageRatio = selectedSessionInitialCount
+    ? clamp(selectedSessionSituations.length / selectedSessionInitialCount, 0, 1)
+    : 0;
+  const namingRatio = selectedSessionSituations.length > 0 ? namedSituationsCount / selectedSessionSituations.length : 0;
+  const activityRatio = selectedSessionSituations.length > 0 ? activeSituationsCount / selectedSessionSituations.length : 0;
   const liveStats = useMemo(() => {
     const remainingCount = timerState.situations.length;
     const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
@@ -1000,6 +1016,91 @@ export default function App() {
                 : 'Sélectionnez une sauvegarde dans la liste de droite.'}
             </div>
             {sessionNotice && <div className="session-notice">{sessionNotice}</div>}
+          </div>
+        )}
+      </div>
+
+      <div className="card sessions-panel">
+        <button
+          type="button"
+          className={`sessions-accordion-toggle ${isSessionSummaryOpen ? 'open' : ''}`}
+          onClick={() => setIsSessionSummaryOpen((prev) => !prev)}
+          aria-expanded={isSessionSummaryOpen}
+          aria-controls="sessionSummaryAccordionPanel"
+        >
+          <div className="row" style={{ gap: '10px' }}>
+            <span className="badge blue">📈 Synthèse sessions</span>
+            <span className="badge gray">{selectedSession ? selectedSession.name : 'Aucune sélection'}</span>
+          </div>
+          <span className="sessions-chevron">{isSessionSummaryOpen ? '▾' : '▸'}</span>
+        </button>
+
+        <div className="sub" style={{ marginBottom: '8px' }}>
+          {isSessionSummaryOpen
+            ? 'Vue synthétique de la sauvegarde sélectionnée dans la bibliothèque.'
+            : 'Ouvrir pour afficher des KPIs et ratios rapides par session.'}
+        </div>
+
+        {isSessionSummaryOpen && (
+          <div id="sessionSummaryAccordionPanel">
+            {sortedSessions.length === 0 ? (
+              <div className="session-empty">Aucune session disponible pour la synthèse.</div>
+            ) : !selectedSession ? (
+              <div className="session-empty">Sélectionnez d’abord une session dans la bibliothèque.</div>
+            ) : !hasSelectedSessionCompleteData ? (
+              <div className="session-empty">
+                Données incomplètes pour « {selectedSession.name} » : taille initiale indisponible.
+              </div>
+            ) : (
+              <>
+                <div className="summary-kpi-grid">
+                  <div className="summary-kpi-item">
+                    <span className="summary-kpi-label">Situations actuelles</span>
+                    <strong>{selectedSessionSituations.length}</strong>
+                  </div>
+                  <div className="summary-kpi-item">
+                    <span className="summary-kpi-label">Plan initial</span>
+                    <strong>{selectedSessionInitialCount}</strong>
+                  </div>
+                  <div className="summary-kpi-item">
+                    <span className="summary-kpi-label">Dernière mise à jour</span>
+                    <strong>{formatDateTime(selectedSession.updatedAt)}</strong>
+                  </div>
+                </div>
+
+                <div className="summary-bars" aria-label="Visualisation synthétique de la session">
+                  <div className="summary-bar-row">
+                    <div className="summary-bar-head">
+                      <span>Couverture de la liste</span>
+                      <strong>{(sessionCoverageRatio * 100).toFixed(0)}%</strong>
+                    </div>
+                    <div className="summary-bar-track">
+                      <div className="summary-bar-fill" style={{ width: `${sessionCoverageRatio * 100}%` }}></div>
+                    </div>
+                  </div>
+
+                  <div className="summary-bar-row">
+                    <div className="summary-bar-head">
+                      <span>Intitulés renseignés</span>
+                      <strong>{(namingRatio * 100).toFixed(0)}%</strong>
+                    </div>
+                    <div className="summary-bar-track">
+                      <div className="summary-bar-fill" style={{ width: `${namingRatio * 100}%` }}></div>
+                    </div>
+                  </div>
+
+                  <div className="summary-bar-row">
+                    <div className="summary-bar-head">
+                      <span>Situations actives</span>
+                      <strong>{(activityRatio * 100).toFixed(0)}%</strong>
+                    </div>
+                    <div className="summary-bar-track">
+                      <div className="summary-bar-fill" style={{ width: `${activityRatio * 100}%` }}></div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
