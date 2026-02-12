@@ -101,6 +101,7 @@ const normalizeState = (data) => {
   const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
   const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
   const cycleStartAt = Number.isFinite(data.cycleStartAt) ? data.cycleStartAt : startAt;
+  const initialEndAt = Number.isFinite(data.initialEndAt) ? data.initialEndAt : endAt;
   const isConfigured =
     Boolean(data.isConfigured) &&
     situations.length > 0 &&
@@ -109,6 +110,7 @@ const normalizeState = (data) => {
     endAt > startAt;
   const isPaused = Boolean(data.isPaused) && isConfigured;
   const pausedAt = isPaused && Number.isFinite(data.pausedAt) ? data.pausedAt : null;
+  const finishedAt = Number.isFinite(data.finishedAt) ? data.finishedAt : null;
 
   return {
     ...data,
@@ -117,9 +119,11 @@ const normalizeState = (data) => {
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
     cycleStartAt: isConfigured ? cycleStartAt : null,
+    initialEndAt: isConfigured ? initialEndAt : null,
     initialCount,
     isPaused,
-    pausedAt
+    pausedAt,
+    finishedAt
   };
 };
 
@@ -129,9 +133,11 @@ const emptyTimerState = {
   startAt: null,
   endAt: null,
   cycleStartAt: null,
+  initialEndAt: null,
   initialCount: null,
   isPaused: false,
-  pausedAt: null
+  pausedAt: null,
+  finishedAt: null
 };
 
 const EVENT_COLORS = {
@@ -152,6 +158,44 @@ const EVENT_LABELS = {
   SITUATION_REMOVED: 'Situation supprimée',
   END_TIME_CHANGED: 'Heure de fin modifiée',
   SESSION_FINISHED: 'Fin de réunion'
+};
+
+const parseLegacySituationName = (description, prefix) => {
+  if (typeof description !== 'string') return null;
+  if (!description.startsWith(prefix)) return null;
+  const [, rawName = ''] = description.split(':');
+  const name = rawName.trim();
+  return name || null;
+};
+
+const getSituationIdentityFromEvent = (event) => {
+  const id = Number.isFinite(event?.situationId) ? event.situationId : null;
+  const explicitName = typeof event?.situationName === 'string' ? event.situationName.trim() : '';
+
+  if (id !== null) {
+    return {
+      key: `id:${id}`,
+      name: explicitName || `Situation ${id}`
+    };
+  }
+
+  const legacyAddedName = parseLegacySituationName(event?.description, 'Situation ajoutée');
+  if (legacyAddedName) {
+    return {
+      key: `name:${legacyAddedName}`,
+      name: legacyAddedName
+    };
+  }
+
+  const legacyRemovedName = parseLegacySituationName(event?.description, 'Situation supprimée');
+  if (legacyRemovedName) {
+    return {
+      key: `name:${legacyRemovedName}`,
+      name: legacyRemovedName
+    };
+  }
+
+  return null;
 };
 
 const createSessionFromTimerState = (timerState, name = 'Session importée') => {
@@ -262,9 +306,15 @@ const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
 };
 
 const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
+  const sweep = endAngle - startAngle;
+  if (sweep <= 0) return '';
+  if (sweep >= 359.999) {
+    return describeFullDisk(centerX, centerY, radius);
+  }
+
   const start = polarToCartesian(centerX, centerY, radius, endAngle);
   const end = polarToCartesian(centerX, centerY, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+  const largeArcFlag = sweep <= 180 ? '0' : '1';
 
   return [
     'M',
@@ -285,6 +335,30 @@ const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
   ].join(' ');
 };
 
+
+const describeFullDisk = (centerX, centerY, radius) => [
+  'M',
+  centerX,
+  centerY - radius,
+  'A',
+  radius,
+  radius,
+  0,
+  1,
+  1,
+  centerX,
+  centerY + radius,
+  'A',
+  radius,
+  radius,
+  0,
+  1,
+  1,
+  centerX,
+  centerY - radius,
+  'Z'
+].join(' ');
+
 const describeSliceLabelPosition = (centerX, centerY, radius, startAngle, endAngle) => {
   const middleAngle = startAngle + (endAngle - startAngle) / 2;
   return polarToCartesian(centerX, centerY, radius, middleAngle);
@@ -294,19 +368,26 @@ const CompressionPie = ({
   situations,
   startAt,
   endAt,
+  initialEndAt,
+  initialCount,
   wallNow,
-  isAdvancedMode
+  isAdvancedMode,
+  isFinished
 }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
   const totalWeight = Math.max(1, getTotalWeight(situations));
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const totalMs = Math.max(1, endAt - startAt);
-  const elapsedMs = clamp(wallNow - startAt, 0, totalMs);
-  const compression = clamp(elapsedMs / totalMs, 0, 1);
+  const baselineCount = Math.max(1, initialCount || situations.length || 1);
+  const baselineDurationMs = Math.max(1, (initialEndAt ?? endAt) - startAt);
+  const baselineAvgMs = baselineDurationMs / baselineCount;
+  const fairnessGapMs = baselineAvgMs - avgNowMs;
+  const rawFairnessOverflowRatio = Math.max(0, fairnessGapMs / baselineAvgMs);
+  const fairnessOverflowRatio = isFinished || remainingCount === 0 ? 0 : rawFairnessOverflowRatio;
+  const visualPressure = clamp(fairnessOverflowRatio, 0, 1);
   const pressureEmoji =
-    compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
-  const hatchedAngle = compression * 360;
+    visualPressure < 0.34 ? '🙂' : visualPressure < 0.67 ? '😐' : '😣';
+  const hatchedAngle = visualPressure * 360;
   const remainingAngle = 360 - hatchedAngle;
   const slices = [];
   let cursor = -90 + hatchedAngle;
@@ -331,12 +412,12 @@ const CompressionPie = ({
 
   const hatchedPath =
     hatchedAngle > 0 ? describeArc(120, 120, 100, -90, -90 + hatchedAngle) : null;
-  const bubbleCount = 6 + Math.round(compression * 10);
-  const bubbleScale = 1 + compression * 0.6;
-  const bubbleDuration = 3.4 - compression * 1.2;
-  const haloCount = 10 + Math.round(compression * 10);
-  const haloScale = 1 + compression * 0.45;
-  const haloDuration = 6.4 - compression * 2.2;
+  const bubbleCount = 6 + Math.round(visualPressure * 10);
+  const bubbleScale = 1 + visualPressure * 0.6;
+  const bubbleDuration = 3.4 - visualPressure * 1.2;
+  const haloCount = 10 + Math.round(visualPressure * 10);
+  const haloScale = 1 + visualPressure * 0.45;
+  const haloDuration = 6.4 - visualPressure * 2.2;
   const bubbles = Array.from({ length: bubbleCount }, (_, i) => {
     const angle = (i / bubbleCount) * Math.PI * 2;
     const radius = 8 + (i % 6) * 4;
@@ -355,7 +436,7 @@ const CompressionPie = ({
       id: `halo-${i}`,
       cx: 120 + Math.cos(angle) * radius,
       cy: 120 + Math.sin(angle) * radius,
-      r: 2 + (i % 6) * 0.5 + compression * 1.1,
+      r: 2 + (i % 6) * 0.5 + visualPressure * 1.1,
       drift,
       delay: (i % 12) * 0.4
     };
@@ -443,7 +524,7 @@ const CompressionPie = ({
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
-          {(compression * 100).toFixed(0)}%
+          +{(fairnessOverflowRatio * 100).toFixed(0)}%
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
@@ -453,9 +534,9 @@ const CompressionPie = ({
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
-        <span className="badge gray">
-          {isAdvancedMode ? 'Temps moyen (poids égaux)' : 'Temps moyen restant'} : {formatMMSS(avgNowMs)}
-        </span>
+        <span className="badge gray">Moyenne cible à t0 : {formatMMSS(baselineAvgMs)}</span>
+        <span className="badge gray">Moyenne réelle restante : {formatMMSS(avgNowMs)}</span>
+        <span className="badge gray">Retard d’équité : {formatMMSS(Math.max(0, fairnessGapMs))}</span>
         <span className="badge gray">Situations restantes : {remainingCount}</span>
       </div>
     </div>
@@ -570,8 +651,10 @@ export default function App() {
       endAt,
       cycleStartAt: now,
       initialCount: n,
+      initialEndAt: endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: null
     };
 
     setTimerState(nextTimerState);
@@ -623,8 +706,10 @@ export default function App() {
       endAt,
       cycleStartAt: now,
       initialCount: target.situations.length,
+      initialEndAt: endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: null
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
@@ -740,6 +825,8 @@ export default function App() {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'SITUATION_ADDED',
         at: now,
+        situationId: newId,
+        situationName: newName,
         description: `Situation ajoutée : ${newName}`
       }
     ]);
@@ -758,6 +845,8 @@ export default function App() {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'SITUATION_REMOVED',
         at: now,
+        situationId: target?.id,
+        situationName: target?.name,
         description: `Situation supprimée${target?.name ? ` : ${target.name}` : '.'}`
       }
     ]);
@@ -786,7 +875,8 @@ export default function App() {
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
-  const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const isFinishedByDeadline = timerState.isConfigured && remainingGlobalMs === 0;
+  const isFinished = Boolean(timerState.finishedAt) || isFinishedByDeadline;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
@@ -898,16 +988,22 @@ export default function App() {
 
     const plannedEndAt = timerState.endAt;
     const finishedEvent = [...orderedEvents].reverse().find((event) => event.type === 'SESSION_FINISHED') ?? null;
-    const actualEndAt = isFinished ? (finishedEvent?.at ?? wallNow) : wallNow;
+    const actualEndAt = isFinished ? (timerState.finishedAt ?? finishedEvent?.at ?? wallNow) : wallNow;
     const totalDurationMs = Math.max(0, actualEndAt - startAt);
 
-    const removedAtMap = new Map();
-    const addedNames = new Set();
+    const durationBySituation = new Map();
+    const activeSituationStarts = new Map();
+    const situationNames = new Map();
     let pauseCount = 0;
     let totalPauseMs = 0;
     let pauseStartAt = null;
 
     orderedEvents.forEach((event) => {
+      const identity = getSituationIdentityFromEvent(event);
+      if (identity?.name) {
+        situationNames.set(identity.key, identity.name);
+      }
+
       if (event.type === 'PAUSE_START') {
         pauseCount += 1;
         pauseStartAt = event.at;
@@ -916,34 +1012,47 @@ export default function App() {
         totalPauseMs += Math.max(0, event.at - pauseStartAt);
         pauseStartAt = null;
       }
-      if (event.type === 'SITUATION_ADDED' && typeof event.description === 'string') {
-        const parts = event.description.split(':');
-        const name = (parts[1] || '').trim();
-        if (name) addedNames.add(name);
+
+      if (event.type === 'SITUATION_ADDED' && identity) {
+        const effectiveStartAt = Number.isFinite(event.at) ? event.at : startAt;
+        activeSituationStarts.set(identity.key, effectiveStartAt);
       }
-      if (event.type === 'SITUATION_REMOVED' && typeof event.description === 'string') {
-        const parts = event.description.split(':');
-        const name = (parts[1] || '').trim();
-        if (name) removedAtMap.set(name, event.at);
+
+      if (event.type === 'SITUATION_REMOVED' && identity) {
+        const effectiveEndAt = Number.isFinite(event.at) ? event.at : actualEndAt;
+        const startForSituation = activeSituationStarts.get(identity.key) ?? startAt;
+        const currentDuration = durationBySituation.get(identity.key) ?? 0;
+        durationBySituation.set(identity.key, currentDuration + Math.max(0, effectiveEndAt - startForSituation));
+        activeSituationStarts.delete(identity.key);
       }
     });
 
-    const knownNames = new Set(timerState.situations.map((situation) => situation.name));
-    addedNames.forEach((name) => knownNames.add(name));
+    timerState.situations.forEach((situation) => {
+      const key = `id:${situation.id}`;
+      if (!activeSituationStarts.has(key)) {
+        activeSituationStarts.set(key, startAt);
+      }
+      if (!situationNames.has(key)) {
+        situationNames.set(key, situation.name);
+      }
+    });
 
     if (pauseStartAt) {
       totalPauseMs += Math.max(0, actualEndAt - pauseStartAt);
     }
 
-    const situationDurations = [...knownNames]
-      .filter(Boolean)
-      .map((name, index) => {
-        const removedAt = removedAtMap.get(name);
-        const endAt = removedAt ?? actualEndAt;
+    activeSituationStarts.forEach((situationStartAt, key) => {
+      const currentDuration = durationBySituation.get(key) ?? 0;
+      durationBySituation.set(key, currentDuration + Math.max(0, actualEndAt - situationStartAt));
+    });
+
+    const situationDurations = [...durationBySituation.entries()]
+      .map(([key, durationMs], index) => {
+        const fallbackName = key.startsWith('id:') ? `Situation ${key.slice(3)}` : key.slice(5);
         return {
           id: index + 1,
-          name,
-          durationMs: Math.max(0, endAt - startAt)
+          name: situationNames.get(key) || fallbackName,
+          durationMs
         };
       })
       .sort((a, b) => b.durationMs - a.durationMs);
@@ -957,7 +1066,7 @@ export default function App() {
       totalPauseMs,
       eventCount: orderedEvents.length
     };
-  }, [timerState.startAt, timerState.endAt, timerState.situations, orderedEvents, isFinished, wallNow]);
+  }, [timerState.startAt, timerState.endAt, timerState.finishedAt, timerState.situations, orderedEvents, isFinished, wallNow]);
 
 
   const analyticsRows = useMemo(
@@ -1031,8 +1140,10 @@ export default function App() {
     setTimerState((prev) => ({
       ...prev,
       endAt: Date.now(),
+      initialEndAt: prev.initialEndAt ?? prev.endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: Date.now()
     }));
     setSessionNotice('Réunion marquée comme terminée. Le rapport final est maintenant disponible.');
   };
@@ -1217,7 +1328,7 @@ export default function App() {
 
             <div className="col" style={{ gap: '12px' }}>
               <div className="sub">
-                Le camembert représente la compression temporelle instantanée et la répartition actuelle.
+                Le camembert représente le débordement d’équité : l’écart entre la moyenne cible par situation à t0 et la moyenne réellement restante.
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
@@ -1244,16 +1355,19 @@ export default function App() {
                   </div>
                   <div className="sub">
                     Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
-                    Le camembert se reconfigure à partir de maintenant ; seule l&apos;échéance est recalculée.
+                    Le retard d&apos;équité reste référencé au plan initial de départ (t0).
                   </div>
                 </div>
               )}
               <CompressionPie
                 situations={timerState.situations}
-                startAt={timerState.cycleStartAt ?? timerState.startAt}
+                startAt={timerState.startAt}
                 endAt={timerState.endAt}
+                initialEndAt={timerState.initialEndAt ?? timerState.endAt}
+                initialCount={timerState.initialCount ?? timerState.situations.length}
                 wallNow={wallNow}
                 isAdvancedMode={isAdvancedMode}
+                isFinished={isFinished}
               />
               {isAdvancedMode && (
                 <button
