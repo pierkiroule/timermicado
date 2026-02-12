@@ -101,6 +101,7 @@ const normalizeState = (data) => {
   const startAt = Number.isFinite(data.startAt) ? data.startAt : null;
   const endAt = Number.isFinite(data.endAt) ? data.endAt : null;
   const cycleStartAt = Number.isFinite(data.cycleStartAt) ? data.cycleStartAt : startAt;
+  const initialEndAt = Number.isFinite(data.initialEndAt) ? data.initialEndAt : endAt;
   const isConfigured =
     Boolean(data.isConfigured) &&
     situations.length > 0 &&
@@ -117,6 +118,7 @@ const normalizeState = (data) => {
     startAt: isConfigured ? startAt : null,
     endAt: isConfigured ? endAt : null,
     cycleStartAt: isConfigured ? cycleStartAt : null,
+    initialEndAt: isConfigured ? initialEndAt : null,
     initialCount,
     isPaused,
     pausedAt
@@ -129,6 +131,7 @@ const emptyTimerState = {
   startAt: null,
   endAt: null,
   cycleStartAt: null,
+  initialEndAt: null,
   initialCount: null,
   isPaused: false,
   pausedAt: null
@@ -332,6 +335,8 @@ const CompressionPie = ({
   situations,
   startAt,
   endAt,
+  initialEndAt,
+  initialCount,
   wallNow,
   isAdvancedMode
 }) => {
@@ -339,12 +344,15 @@ const CompressionPie = ({
   const remainingCount = situations.length;
   const totalWeight = Math.max(1, getTotalWeight(situations));
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
-  const totalMs = Math.max(1, endAt - startAt);
-  const elapsedMs = clamp(wallNow - startAt, 0, totalMs);
-  const compression = clamp(elapsedMs / totalMs, 0, 1);
+  const baselineCount = Math.max(1, initialCount || situations.length || 1);
+  const baselineDurationMs = Math.max(1, (initialEndAt ?? endAt) - startAt);
+  const baselineAvgMs = baselineDurationMs / baselineCount;
+  const fairnessGapMs = baselineAvgMs - avgNowMs;
+  const fairnessOverflowRatio = Math.max(0, fairnessGapMs / baselineAvgMs);
+  const visualPressure = clamp(fairnessOverflowRatio, 0, 1);
   const pressureEmoji =
-    compression < 0.34 ? '🙂' : compression < 0.67 ? '😐' : '😣';
-  const hatchedAngle = compression * 360;
+    visualPressure < 0.34 ? '🙂' : visualPressure < 0.67 ? '😐' : '😣';
+  const hatchedAngle = visualPressure * 360;
   const remainingAngle = 360 - hatchedAngle;
   const slices = [];
   let cursor = -90 + hatchedAngle;
@@ -369,12 +377,12 @@ const CompressionPie = ({
 
   const hatchedPath =
     hatchedAngle > 0 ? describeArc(120, 120, 100, -90, -90 + hatchedAngle) : null;
-  const bubbleCount = 6 + Math.round(compression * 10);
-  const bubbleScale = 1 + compression * 0.6;
-  const bubbleDuration = 3.4 - compression * 1.2;
-  const haloCount = 10 + Math.round(compression * 10);
-  const haloScale = 1 + compression * 0.45;
-  const haloDuration = 6.4 - compression * 2.2;
+  const bubbleCount = 6 + Math.round(visualPressure * 10);
+  const bubbleScale = 1 + visualPressure * 0.6;
+  const bubbleDuration = 3.4 - visualPressure * 1.2;
+  const haloCount = 10 + Math.round(visualPressure * 10);
+  const haloScale = 1 + visualPressure * 0.45;
+  const haloDuration = 6.4 - visualPressure * 2.2;
   const bubbles = Array.from({ length: bubbleCount }, (_, i) => {
     const angle = (i / bubbleCount) * Math.PI * 2;
     const radius = 8 + (i % 6) * 4;
@@ -393,7 +401,7 @@ const CompressionPie = ({
       id: `halo-${i}`,
       cx: 120 + Math.cos(angle) * radius,
       cy: 120 + Math.sin(angle) * radius,
-      r: 2 + (i % 6) * 0.5 + compression * 1.1,
+      r: 2 + (i % 6) * 0.5 + visualPressure * 1.1,
       drift,
       delay: (i % 12) * 0.4
     };
@@ -481,7 +489,7 @@ const CompressionPie = ({
           {pressureEmoji}
         </text>
         <text x="120" y="138" textAnchor="middle" className="pie-value">
-          {(compression * 100).toFixed(0)}%
+          +{(fairnessOverflowRatio * 100).toFixed(0)}%
         </text>
         {remainingCount === 0 && (
           <text x="120" y="164" textAnchor="middle" className="pie-sub">
@@ -491,9 +499,9 @@ const CompressionPie = ({
       </svg>
       <div className="pie-meta">
         <span className="badge gray">Temps global restant : {formatMMSS(remainingGlobalMs)}</span>
-        <span className="badge gray">
-          {isAdvancedMode ? 'Temps moyen (poids égaux)' : 'Temps moyen restant'} : {formatMMSS(avgNowMs)}
-        </span>
+        <span className="badge gray">Moyenne cible à t0 : {formatMMSS(baselineAvgMs)}</span>
+        <span className="badge gray">Moyenne réelle restante : {formatMMSS(avgNowMs)}</span>
+        <span className="badge gray">Retard d’équité : {formatMMSS(Math.max(0, fairnessGapMs))}</span>
         <span className="badge gray">Situations restantes : {remainingCount}</span>
       </div>
     </div>
@@ -608,6 +616,7 @@ export default function App() {
       endAt,
       cycleStartAt: now,
       initialCount: n,
+      initialEndAt: endAt,
       isPaused: false,
       pausedAt: null
     };
@@ -661,6 +670,7 @@ export default function App() {
       endAt,
       cycleStartAt: now,
       initialCount: target.situations.length,
+      initialEndAt: endAt,
       isPaused: false,
       pausedAt: null
     });
@@ -1092,6 +1102,7 @@ export default function App() {
     setTimerState((prev) => ({
       ...prev,
       endAt: Date.now(),
+      initialEndAt: prev.initialEndAt ?? prev.endAt,
       isPaused: false,
       pausedAt: null
     }));
@@ -1278,7 +1289,7 @@ export default function App() {
 
             <div className="col" style={{ gap: '12px' }}>
               <div className="sub">
-                Le camembert représente la compression temporelle instantanée et la répartition actuelle.
+                Le camembert représente le débordement d’équité : l’écart entre la moyenne cible par situation à t0 et la moyenne réellement restante.
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
@@ -1305,14 +1316,16 @@ export default function App() {
                   </div>
                   <div className="sub">
                     Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
-                    Le camembert se reconfigure à partir de maintenant ; seule l&apos;échéance est recalculée.
+                    Le retard d&apos;équité reste référencé au plan initial de départ (t0).
                   </div>
                 </div>
               )}
               <CompressionPie
                 situations={timerState.situations}
-                startAt={timerState.cycleStartAt ?? timerState.startAt}
+                startAt={timerState.startAt}
                 endAt={timerState.endAt}
+                initialEndAt={timerState.initialEndAt ?? timerState.endAt}
+                initialCount={timerState.initialCount ?? timerState.situations.length}
                 wallNow={wallNow}
                 isAdvancedMode={isAdvancedMode}
               />
