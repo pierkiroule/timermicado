@@ -303,9 +303,15 @@ const polarToCartesian = (centerX, centerY, radius, angleInDegrees) => {
 };
 
 const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
+  const sweep = endAngle - startAngle;
+  if (sweep <= 0) return '';
+  if (sweep >= 359.999) {
+    return describeFullDisk(centerX, centerY, radius);
+  }
+
   const start = polarToCartesian(centerX, centerY, radius, endAngle);
   const end = polarToCartesian(centerX, centerY, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+  const largeArcFlag = sweep <= 180 ? '0' : '1';
 
   return [
     'M',
@@ -326,6 +332,30 @@ const describeArc = (centerX, centerY, radius, startAngle, endAngle) => {
   ].join(' ');
 };
 
+
+const describeFullDisk = (centerX, centerY, radius) => [
+  'M',
+  centerX,
+  centerY - radius,
+  'A',
+  radius,
+  radius,
+  0,
+  1,
+  1,
+  centerX,
+  centerY + radius,
+  'A',
+  radius,
+  radius,
+  0,
+  1,
+  1,
+  centerX,
+  centerY - radius,
+  'Z'
+].join(' ');
+
 const describeSliceLabelPosition = (centerX, centerY, radius, startAngle, endAngle) => {
   const middleAngle = startAngle + (endAngle - startAngle) / 2;
   return polarToCartesian(centerX, centerY, radius, middleAngle);
@@ -338,7 +368,8 @@ const CompressionPie = ({
   initialEndAt,
   initialCount,
   wallNow,
-  isAdvancedMode
+  isAdvancedMode,
+  isFinished
 }) => {
   const remainingGlobalMs = Math.max(0, endAt - wallNow);
   const remainingCount = situations.length;
@@ -348,7 +379,8 @@ const CompressionPie = ({
   const baselineDurationMs = Math.max(1, (initialEndAt ?? endAt) - startAt);
   const baselineAvgMs = baselineDurationMs / baselineCount;
   const fairnessGapMs = baselineAvgMs - avgNowMs;
-  const fairnessOverflowRatio = Math.max(0, fairnessGapMs / baselineAvgMs);
+  const rawFairnessOverflowRatio = Math.max(0, fairnessGapMs / baselineAvgMs);
+  const fairnessOverflowRatio = isFinished ? 0 : rawFairnessOverflowRatio;
   const visualPressure = clamp(fairnessOverflowRatio, 0, 1);
   const pressureEmoji =
     visualPressure < 0.34 ? '🙂' : visualPressure < 0.67 ? '😐' : '😣';
@@ -1328,6 +1360,7 @@ export default function App() {
                 initialCount={timerState.initialCount ?? timerState.situations.length}
                 wallNow={wallNow}
                 isAdvancedMode={isAdvancedMode}
+                isFinished={isFinished}
               />
               {isAdvancedMode && (
                 <button
