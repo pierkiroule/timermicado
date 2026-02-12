@@ -110,6 +110,7 @@ const normalizeState = (data) => {
     endAt > startAt;
   const isPaused = Boolean(data.isPaused) && isConfigured;
   const pausedAt = isPaused && Number.isFinite(data.pausedAt) ? data.pausedAt : null;
+  const finishedAt = Number.isFinite(data.finishedAt) ? data.finishedAt : null;
 
   return {
     ...data,
@@ -121,7 +122,8 @@ const normalizeState = (data) => {
     initialEndAt: isConfigured ? initialEndAt : null,
     initialCount,
     isPaused,
-    pausedAt
+    pausedAt,
+    finishedAt
   };
 };
 
@@ -134,7 +136,8 @@ const emptyTimerState = {
   initialEndAt: null,
   initialCount: null,
   isPaused: false,
-  pausedAt: null
+  pausedAt: null,
+  finishedAt: null
 };
 
 const EVENT_COLORS = {
@@ -380,7 +383,7 @@ const CompressionPie = ({
   const baselineAvgMs = baselineDurationMs / baselineCount;
   const fairnessGapMs = baselineAvgMs - avgNowMs;
   const rawFairnessOverflowRatio = Math.max(0, fairnessGapMs / baselineAvgMs);
-  const fairnessOverflowRatio = isFinished ? 0 : rawFairnessOverflowRatio;
+  const fairnessOverflowRatio = isFinished || remainingCount === 0 ? 0 : rawFairnessOverflowRatio;
   const visualPressure = clamp(fairnessOverflowRatio, 0, 1);
   const pressureEmoji =
     visualPressure < 0.34 ? '🙂' : visualPressure < 0.67 ? '😐' : '😣';
@@ -650,7 +653,8 @@ export default function App() {
       initialCount: n,
       initialEndAt: endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: null
     };
 
     setTimerState(nextTimerState);
@@ -704,7 +708,8 @@ export default function App() {
       initialCount: target.situations.length,
       initialEndAt: endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: null
     });
     setActiveSessionId(target.id);
     setSelectedSessionId(target.id);
@@ -870,7 +875,8 @@ export default function App() {
 
   const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
   const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
-  const isFinished = timerState.isConfigured && remainingGlobalMs === 0;
+  const isFinishedByDeadline = timerState.isConfigured && remainingGlobalMs === 0;
+  const isFinished = Boolean(timerState.finishedAt) || isFinishedByDeadline;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
   const selectedSession = sortedSessions.find((session) => session.id === selectedSessionId) ?? null;
   const canResumeSession = Boolean(selectedSession && configValues.end);
@@ -982,7 +988,7 @@ export default function App() {
 
     const plannedEndAt = timerState.endAt;
     const finishedEvent = [...orderedEvents].reverse().find((event) => event.type === 'SESSION_FINISHED') ?? null;
-    const actualEndAt = isFinished ? (finishedEvent?.at ?? wallNow) : wallNow;
+    const actualEndAt = isFinished ? (timerState.finishedAt ?? finishedEvent?.at ?? wallNow) : wallNow;
     const totalDurationMs = Math.max(0, actualEndAt - startAt);
 
     const durationBySituation = new Map();
@@ -1060,7 +1066,7 @@ export default function App() {
       totalPauseMs,
       eventCount: orderedEvents.length
     };
-  }, [timerState.startAt, timerState.endAt, timerState.situations, orderedEvents, isFinished, wallNow]);
+  }, [timerState.startAt, timerState.endAt, timerState.finishedAt, timerState.situations, orderedEvents, isFinished, wallNow]);
 
 
   const analyticsRows = useMemo(
@@ -1136,7 +1142,8 @@ export default function App() {
       endAt: Date.now(),
       initialEndAt: prev.initialEndAt ?? prev.endAt,
       isPaused: false,
-      pausedAt: null
+      pausedAt: null,
+      finishedAt: Date.now()
     }));
     setSessionNotice('Réunion marquée comme terminée. Le rapport final est maintenant disponible.');
   };
