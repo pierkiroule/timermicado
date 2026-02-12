@@ -154,6 +154,44 @@ const EVENT_LABELS = {
   SESSION_FINISHED: 'Fin de réunion'
 };
 
+const parseLegacySituationName = (description, prefix) => {
+  if (typeof description !== 'string') return null;
+  if (!description.startsWith(prefix)) return null;
+  const [, rawName = ''] = description.split(':');
+  const name = rawName.trim();
+  return name || null;
+};
+
+const getSituationIdentityFromEvent = (event) => {
+  const id = Number.isFinite(event?.situationId) ? event.situationId : null;
+  const explicitName = typeof event?.situationName === 'string' ? event.situationName.trim() : '';
+
+  if (id !== null) {
+    return {
+      key: `id:${id}`,
+      name: explicitName || `Situation ${id}`
+    };
+  }
+
+  const legacyAddedName = parseLegacySituationName(event?.description, 'Situation ajoutée');
+  if (legacyAddedName) {
+    return {
+      key: `name:${legacyAddedName}`,
+      name: legacyAddedName
+    };
+  }
+
+  const legacyRemovedName = parseLegacySituationName(event?.description, 'Situation supprimée');
+  if (legacyRemovedName) {
+    return {
+      key: `name:${legacyRemovedName}`,
+      name: legacyRemovedName
+    };
+  }
+
+  return null;
+};
+
 const createSessionFromTimerState = (timerState, name = 'Session importée') => {
   const now = Date.now();
   return {
@@ -740,6 +778,8 @@ export default function App() {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'SITUATION_ADDED',
         at: now,
+        situationId: newId,
+        situationName: newName,
         description: `Situation ajoutée : ${newName}`
       }
     ]);
@@ -758,6 +798,8 @@ export default function App() {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
         type: 'SITUATION_REMOVED',
         at: now,
+        situationId: target?.id,
+        situationName: target?.name,
         description: `Situation supprimée${target?.name ? ` : ${target.name}` : '.'}`
       }
     ]);
@@ -901,13 +943,19 @@ export default function App() {
     const actualEndAt = isFinished ? (finishedEvent?.at ?? wallNow) : wallNow;
     const totalDurationMs = Math.max(0, actualEndAt - startAt);
 
-    const removedAtMap = new Map();
-    const addedNames = new Set();
+    const durationBySituation = new Map();
+    const activeSituationStarts = new Map();
+    const situationNames = new Map();
     let pauseCount = 0;
     let totalPauseMs = 0;
     let pauseStartAt = null;
 
     orderedEvents.forEach((event) => {
+      const identity = getSituationIdentityFromEvent(event);
+      if (identity?.name) {
+        situationNames.set(identity.key, identity.name);
+      }
+
       if (event.type === 'PAUSE_START') {
         pauseCount += 1;
         pauseStartAt = event.at;
@@ -916,34 +964,47 @@ export default function App() {
         totalPauseMs += Math.max(0, event.at - pauseStartAt);
         pauseStartAt = null;
       }
-      if (event.type === 'SITUATION_ADDED' && typeof event.description === 'string') {
-        const parts = event.description.split(':');
-        const name = (parts[1] || '').trim();
-        if (name) addedNames.add(name);
+
+      if (event.type === 'SITUATION_ADDED' && identity) {
+        const effectiveStartAt = Number.isFinite(event.at) ? event.at : startAt;
+        activeSituationStarts.set(identity.key, effectiveStartAt);
       }
-      if (event.type === 'SITUATION_REMOVED' && typeof event.description === 'string') {
-        const parts = event.description.split(':');
-        const name = (parts[1] || '').trim();
-        if (name) removedAtMap.set(name, event.at);
+
+      if (event.type === 'SITUATION_REMOVED' && identity) {
+        const effectiveEndAt = Number.isFinite(event.at) ? event.at : actualEndAt;
+        const startForSituation = activeSituationStarts.get(identity.key) ?? startAt;
+        const currentDuration = durationBySituation.get(identity.key) ?? 0;
+        durationBySituation.set(identity.key, currentDuration + Math.max(0, effectiveEndAt - startForSituation));
+        activeSituationStarts.delete(identity.key);
       }
     });
 
-    const knownNames = new Set(timerState.situations.map((situation) => situation.name));
-    addedNames.forEach((name) => knownNames.add(name));
+    timerState.situations.forEach((situation) => {
+      const key = `id:${situation.id}`;
+      if (!activeSituationStarts.has(key)) {
+        activeSituationStarts.set(key, startAt);
+      }
+      if (!situationNames.has(key)) {
+        situationNames.set(key, situation.name);
+      }
+    });
 
     if (pauseStartAt) {
       totalPauseMs += Math.max(0, actualEndAt - pauseStartAt);
     }
 
-    const situationDurations = [...knownNames]
-      .filter(Boolean)
-      .map((name, index) => {
-        const removedAt = removedAtMap.get(name);
-        const endAt = removedAt ?? actualEndAt;
+    activeSituationStarts.forEach((situationStartAt, key) => {
+      const currentDuration = durationBySituation.get(key) ?? 0;
+      durationBySituation.set(key, currentDuration + Math.max(0, actualEndAt - situationStartAt));
+    });
+
+    const situationDurations = [...durationBySituation.entries()]
+      .map(([key, durationMs], index) => {
+        const fallbackName = key.startsWith('id:') ? `Situation ${key.slice(3)}` : key.slice(5);
         return {
           id: index + 1,
-          name,
-          durationMs: Math.max(0, endAt - startAt)
+          name: situationNames.get(key) || fallbackName,
+          durationMs
         };
       })
       .sort((a, b) => b.durationMs - a.durationMs);
