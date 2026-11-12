@@ -64,3 +64,12 @@
 - [ ] Tous les scénarios manuels A→F sont validés.
 - [ ] Accessibilité minimale validée (modale + accordéons).
 - [ ] Vérification finale UX: aucun contrôle historique existant n’a été déplacé/supprimé.
+
+## 5) Invariants temporels
+- [ ] Refuser une heure déjà passée sans reporter au lendemain.
+- [ ] Vérifier que pause/reprise, ajout/suppression et poids ne changent jamais l’échéance.
+- [ ] Recharger pendant une pause : conserver son début et les événements précédents.
+- [ ] Dépasser l’échéance pendant une pause ou après mise en veille : afficher TERMINÉ et zéro temps restant ; figer les statistiques à l’échéance.
+- [ ] Terminer plus tôt : conserver l’heure de fin fixée, enregistrer la fin réelle et afficher zéro temps restant après rechargement.
+- [ ] Supprimer toutes les situations puis recharger : conserver la réunion et son échéance ; pouvoir ajouter une nouvelle situation avant la fin.
+- [ ] Supprimer puis ajouter une situation : ne pas réutiliser l’identifiant supprimé dans la chronologie.

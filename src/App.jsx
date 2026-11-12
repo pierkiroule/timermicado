@@ -1,3 +1,4 @@
+import { remainingTime, meetingEnd, canEditMeeting, deadlineForToday } from './utils/timing.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildTemplateExportPayload,
@@ -31,13 +32,6 @@ const COLORS = [
 const pad2 = (n) => String(n).padStart(2, '0');
 
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-
-const parseTimeToToday = (hhmm) => {
-  const [h, m] = hhmm.split(':').map(Number);
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  return d.getTime();
-};
 
 const formatMMSS = (ms) => {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -104,7 +98,6 @@ const normalizeState = (data) => {
   const initialEndAt = Number.isFinite(data.initialEndAt) ? data.initialEndAt : endAt;
   const isConfigured =
     Boolean(data.isConfigured) &&
-    situations.length > 0 &&
     startAt !== null &&
     endAt !== null &&
     endAt > startAt;
@@ -274,7 +267,8 @@ const loadAppState = () => {
     return {
       timerState,
       sessions,
-      activeSessionId
+      activeSessionId,
+      sessionEvents: Array.isArray(data.sessionEvents) ? data.sessionEvents.filter(event => event && Number.isFinite(event.at) && typeof event.type === 'string') : []
     };
   } catch (error) {
     console.warn('Impossible de charger la session.', error);
@@ -372,9 +366,10 @@ const CompressionPie = ({
   initialCount,
   wallNow,
   isAdvancedMode,
-  isFinished
+  isFinished,
+  finishedAt
 }) => {
-  const remainingGlobalMs = Math.max(0, endAt - wallNow);
+  const remainingGlobalMs = remainingTime({ endAt, finishedAt }, wallNow);
   const remainingCount = situations.length;
   const totalWeight = Math.max(1, getTotalWeight(situations));
   const avgNowMs = remainingCount > 0 ? remainingGlobalMs / remainingCount : 0;
@@ -555,7 +550,7 @@ export default function App() {
   const [sessionNotice, setSessionNotice] = useState('');
   const [isSessionsPanelOpen, setIsSessionsPanelOpen] = useState(false);
   const [isStatsModalOpen, setIsStatsModalOpen] = useState(false);
-  const [sessionEvents, setSessionEvents] = useState([]);
+  const [sessionEvents, setSessionEvents] = useState(initialData.sessionEvents ?? []);
   const [finishConfirmArmed, setFinishConfirmArmed] = useState(false);
   const [wallNow, setWallNow] = useState(() => Date.now());
   const [showReset, setShowReset] = useState(false);
@@ -576,14 +571,15 @@ export default function App() {
         JSON.stringify({
           timerState,
           sessions,
-          activeSessionId
+          activeSessionId,
+          sessionEvents
         })
       );
       window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(timerState));
     } catch (error) {
       console.warn('Impossible de sauvegarder la session.', error);
     }
-  }, [timerState, sessions, activeSessionId]);
+  }, [timerState, sessions, activeSessionId, sessionEvents]);
 
   useEffect(() => {
     try {
@@ -641,8 +637,12 @@ export default function App() {
     if (!configValues.end) return;
 
     const now = Date.now();
-    let endAt = parseTimeToToday(configValues.end);
-    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
+    const endAt = deadlineForToday(configValues.end, now);
+    if (endAt === null) {
+      setSessionNotice('Choisissez une heure de fin future pour aujourd’hui.');
+      return;
+    }
+    setWallNow(now);
 
     const nextTimerState = {
       isConfigured: true,
@@ -696,8 +696,12 @@ export default function App() {
     if (!target || !target.situations.length) return;
 
     const now = Date.now();
-    let endAt = parseTimeToToday(configValues.end);
-    if (endAt <= now) endAt += 24 * 60 * 60 * 1000;
+    const endAt = deadlineForToday(configValues.end, now);
+    if (endAt === null) {
+      setSessionNotice('Choisissez une heure de fin future pour aujourd’hui.');
+      return;
+    }
+    setWallNow(now);
 
     setTimerState({
       isConfigured: true,
@@ -808,7 +812,12 @@ export default function App() {
 
   const addSituation = () => {
     const now = Date.now();
-    const newId = Math.max(0, ...timerState.situations.map((s) => s.id)) + 1;
+    if (!canEditMeeting(timerState, now)) return;
+    const usedIds = [
+      ...timerState.situations.map((s) => s.id),
+      ...sessionEvents.map((event) => Number(event.situationId) || 0)
+    ];
+    const newId = usedIds.reduce((max, id) => Math.max(max, id), 0) + 1;
     const newName = `Situation ${newId}`;
     setTimerState((prev) => {
       return {
@@ -834,6 +843,7 @@ export default function App() {
 
   const removeSituation = (id) => {
     const now = Date.now();
+    if (!canEditMeeting(timerState, now)) return;
     const target = timerState.situations.find((s) => s.id === id);
     setTimerState((prev) => ({
       ...prev,
@@ -853,6 +863,7 @@ export default function App() {
   };
 
   const updateSituationName = (id, value) => {
+    if (!canEditMeeting(timerState, Date.now())) return;
     setTimerState((prev) => ({
       ...prev,
       situations: prev.situations.map((s) => (s.id === id ? { ...s, name: value } : s))
@@ -860,6 +871,7 @@ export default function App() {
   };
 
   const adjustSituationWeight = (id, delta) => {
+    if (!canEditMeeting(timerState, Date.now())) return;
     setTimerState((prev) => ({
       ...prev,
       situations: prev.situations.map((situation) => {
@@ -873,8 +885,8 @@ export default function App() {
   };
 
 
-  const remainingGlobalMs = timerState.isConfigured ? Math.max(0, timerState.endAt - wallNow) : 0;
-  const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, wallNow - timerState.pausedAt) : 0;
+  const remainingGlobalMs = timerState.isConfigured ? remainingTime(timerState, wallNow) : 0;
+  const currentPauseMs = timerState.isPaused && timerState.pausedAt ? Math.max(0, meetingEnd(timerState, wallNow) - timerState.pausedAt) : 0;
   const isFinishedByDeadline = timerState.isConfigured && remainingGlobalMs === 0;
   const isFinished = Boolean(timerState.finishedAt) || isFinishedByDeadline;
   const sortedSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
@@ -916,8 +928,8 @@ export default function App() {
 
   useEffect(() => {
     if (!timerState.isConfigured || !isFinished || endLoggedRef.current) return;
-    const now = Date.now();
-    setSessionEvents((prev) => [
+    const now = meetingEnd(timerState, Date.now());
+    setSessionEvents((prev) => prev.some(event => event.type === 'SESSION_FINISHED') ? prev : [
       ...prev,
       {
         id: `evt-${now}-${Math.random().toString(36).slice(2, 6)}`,
@@ -927,7 +939,7 @@ export default function App() {
       }
     ]);
     endLoggedRef.current = true;
-  }, [timerState.isConfigured, isFinished]);
+  }, [timerState, isFinished]);
 
 
   const eventLegendEntries = useMemo(
@@ -987,8 +999,7 @@ export default function App() {
     }
 
     const plannedEndAt = timerState.endAt;
-    const finishedEvent = [...orderedEvents].reverse().find((event) => event.type === 'SESSION_FINISHED') ?? null;
-    const actualEndAt = isFinished ? (timerState.finishedAt ?? finishedEvent?.at ?? wallNow) : wallNow;
+    const actualEndAt = meetingEnd(timerState, wallNow);
     const totalDurationMs = Math.max(0, actualEndAt - startAt);
 
     const durationBySituation = new Map();
@@ -1097,7 +1108,7 @@ export default function App() {
   );
 
   const toggleGlobalPause = () => {
-    if (!timerState.isConfigured || isFinished) return;
+    if (!canEditMeeting(timerState, Date.now())) return;
 
     const now = Date.now();
     const nextType = timerState.isPaused ? 'PAUSE_END' : 'PAUSE_START';
@@ -1118,7 +1129,7 @@ export default function App() {
   };
 
   const handleFinishMeeting = () => {
-    if (!timerState.isConfigured || isFinished) return;
+    if (!canEditMeeting(timerState, Date.now())) return;
     if (!finishConfirmArmed) {
       setFinishConfirmArmed(true);
       setSessionNotice('Confirmez en recliquant : mettre fin à la réunion maintenant.');
@@ -1139,49 +1150,12 @@ export default function App() {
     endLoggedRef.current = false;
     setTimerState((prev) => ({
       ...prev,
-      endAt: Date.now(),
       initialEndAt: prev.initialEndAt ?? prev.endAt,
       isPaused: false,
       pausedAt: null,
       finishedAt: Date.now()
     }));
     setSessionNotice('Réunion marquée comme terminée. Le rapport final est maintenant disponible.');
-  };
-
-  const handleAdjustEndTime = () => {
-    if (!timerState.isConfigured || !configValues.end) return;
-
-    const previousEndTime = Number.isFinite(timerState.endAt)
-      ? new Date(timerState.endAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-      : null;
-
-    const now = Date.now();
-    let nextEndAt = parseTimeToToday(configValues.end);
-    if (nextEndAt <= now) nextEndAt += 24 * 60 * 60 * 1000;
-
-    setTimerState((prev) => ({
-      ...prev,
-      endAt: nextEndAt,
-      cycleStartAt: now
-    }));
-    const eventAt = Date.now();
-    setSessionEvents((prev) => [
-      ...prev,
-      {
-        id: `evt-${eventAt}-${Math.random().toString(36).slice(2, 6)}`,
-        type: 'END_TIME_CHANGED',
-        at: eventAt,
-        description: previousEndTime
-          ? `Heure de fin ajustée : ${previousEndTime} → ${configValues.end}.`
-          : `Heure de fin ajustée à ${configValues.end}.`
-      }
-    ]);
-    endLoggedRef.current = false;
-    setSessionNotice(
-      previousEndTime
-        ? `Heure de fin ajustée de ${previousEndTime} à ${configValues.end}. L'horloge continue sans interruption.`
-        : `Nouvelle heure de fin appliquée : ${configValues.end}. L'horloge continue sans interruption.`
-    );
   };
 
   return (
@@ -1309,6 +1283,7 @@ export default function App() {
             <button type="button" className="btn-primary" onClick={handleLaunch}>
               🚀 Lancer
             </button>
+            {sessionNotice && <div role="status">{sessionNotice}</div>}
 
             <div className="sub">Le temps global est fixe. Les situations se partagent le temps restant.</div>
           </div>
@@ -1332,33 +1307,6 @@ export default function App() {
                 <br />
                 Le bouton pause met l&apos;équipe en pause, pas l&apos;horloge.
               </div>
-              {isAdvancedMode && (
-                <div className="col end-time-adjust" style={{ gap: '8px' }}>
-                  <label htmlFor="runEndEdit">Ajuster l'heure de fin en cours de réunion</label>
-                  <div className="row" style={{ gap: '8px', flexWrap: 'wrap' }}>
-                    <input
-                      id="runEndEdit"
-                      type="time"
-                      value={configValues.end}
-                      onChange={(event) => setConfigValues((prev) => ({ ...prev, end: event.target.value }))}
-                      aria-label="Nouvelle heure de fin visée"
-                      style={{ maxWidth: '180px' }}
-                    />
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      onClick={handleAdjustEndTime}
-                      disabled={!configValues.end || isFinished}
-                    >
-                      Appliquer la nouvelle heure de fin
-                    </button>
-                  </div>
-                  <div className="sub">
-                    Conseil : utilisez ce réglage uniquement si la réunion doit vraiment être prolongée ou raccourcie.
-                    Le retard d&apos;équité reste référencé au plan initial de départ (t0).
-                  </div>
-                </div>
-              )}
               <CompressionPie
                 situations={timerState.situations}
                 startAt={timerState.startAt}
@@ -1366,6 +1314,7 @@ export default function App() {
                 initialEndAt={timerState.initialEndAt ?? timerState.endAt}
                 initialCount={timerState.initialCount ?? timerState.situations.length}
                 wallNow={wallNow}
+                finishedAt={timerState.finishedAt}
                 isAdvancedMode={isAdvancedMode}
                 isFinished={isFinished}
               />
@@ -1392,7 +1341,7 @@ export default function App() {
                   Situations : <span id="nbLabel">{timerState.situations.length}</span>
                 </span>
               </div>
-              <button type="button" className="btn-outline" onClick={addSituation}>+ Ajouter</button>
+              <button type="button" className="btn-outline" onClick={addSituation} disabled={isFinished}>+ Ajouter</button>
             </div>
 
             <div id="list" className="list">
@@ -1412,6 +1361,7 @@ export default function App() {
                         <div className="row" style={{ gap: '10px' }}>
                           <div className="dot" style={{ background: sit.color }}></div>
                           <input
+                            disabled={isFinished}
                             data-name={sit.id}
                             type="text"
                             value={sit.name}
@@ -1431,11 +1381,11 @@ export default function App() {
                       <div className="row" style={{ gap: '10px', flexWrap: 'wrap' }}>
                         {isAdvancedMode && (
                           <div className="weight-controls" role="group" aria-label={`Poids de ${sit.name}`}>
-                            <button type="button" className="btn-outline" onClick={() => adjustSituationWeight(sit.id, -1)}>
+                            <button type="button" className="btn-outline" disabled={isFinished} onClick={() => adjustSituationWeight(sit.id, -1)}>
                               −
                             </button>
                             <span className="badge gray">Poids : {weighted?.weight ?? 1}</span>
-                            <button type="button" className="btn-outline" onClick={() => adjustSituationWeight(sit.id, 1)}>
+                            <button type="button" className="btn-outline" disabled={isFinished} onClick={() => adjustSituationWeight(sit.id, 1)}>
                               +
                             </button>
                           </div>
@@ -1443,6 +1393,7 @@ export default function App() {
                         <button
                           type="button"
                           className="btn-outline danger"
+                          disabled={isFinished}
                           onClick={() => removeSituation(sit.id)}
                         >
                           ✕ Supprimer
